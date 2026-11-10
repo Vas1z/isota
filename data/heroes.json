@@ -1,0 +1,193 @@
+{
+  "progression": {
+    "max_level": 10,
+    "xp_base": 100,
+    "xp_step": 50,
+    "respawn_per_level": 1.0,
+    "hero_kill_gold_base": 150,
+    "hero_kill_gold_per_level": 25,
+    "hp_per_str": 12,
+    "mana_per_int": 8,
+    "armor_per_agi": 0.15,
+    "damage_per_primary": 0.8,
+    "attack_speed_per_agi": 0.006,
+    "starting_gold": 600,
+    "mana_regen": 3.0
+  },
+  "heroes": {
+    "knight": {
+      "name": "Сэр Альдрик",
+      "title": "Рыцарь Света",
+      "primary": "str",
+      "color": [225, 205, 120],
+      "portrait": "assets/heroes/knight.png",
+      "base": {
+        "hp": 200, "mana": 80, "damage": 30, "armor": 3,
+        "speed": 1.0, "atk_range": 3.5, "atk_cd": 0.75,
+        "radius": 0.35, "projectile_speed": 8.0,
+        "str": 24, "agi": 14, "int": 14
+      },
+      "growth": {"str": 2.4, "agi": 1.4, "int": 1.2},
+      "abilities": [
+        {
+          "id": "shield_bash", "name": "Удар щитом", "key": "Q",
+          "desc": "Урон и замедление цели.",
+          "type": "target_damage", "range": 3.5, "damage": 60,
+          "slow": 0.6, "slow_duration": 2.0,
+          "mana": 35, "cooldown": 6.0, "color": [255, 225, 120]
+        },
+        {
+          "id": "holy_light", "name": "Святой свет", "key": "W",
+          "desc": "Лечит героя.",
+          "type": "self_heal", "amount": 90,
+          "mana": 50, "cooldown": 10.0, "color": [150, 255, 150]
+        },
+        {
+          "id": "judgement", "name": "Суд", "key": "E",
+          "desc": "Урон по области.",
+          "type": "aoe_damage", "range": 5.0, "radius": 2.2, "damage": 130,
+          "mana": 80, "cooldown": 18.0, "color": [255, 215, 90]
+        }
+      ]
+    },
+    "archer": {
+      "name": "Лира",
+      "title": "Теневая лучница",
+      "primary": "agi",
+      "color": [120, 210, 140],
+      "portrait": "assets/heroes/archer.png",
+      "base": {
+        "hp": 180, "mana": 90, "damage": 34, "armor": 2,
+        "speed": 1.1, "atk_range": 5.0, "atk_cd": 0.65,
+        "radius": 0.33, "projectile_speed": 10.0,
+        "str": 16, "agi": 26, "int": 16
+      },
+      "growth": {"str": 1.6, "agi": 2.8, "int": 1.2},
+      "abilities": [
+        {
+          "id": "piercing_arrow", "name": "Пронзающая стрела", "key": "Q",
+          "desc": "Дальний мощный выстрел.",
+          "type": "target_damage", "range": 7.0, "damage": 75,
+          "mana": 30, "cooldown": 5.0, "color": [150, 255, 170]
+        },
+        {
+          "id": "windrun", "name": "Ветер", "key": "W",
+          "desc": "Ускоряет героя на 4 секунды.",
+          "type": "speed_buff", "multiplier": 1.5, "duration": 4.0,
+          "mana": 40, "cooldown": 12.0, "color": [160, 240, 255]
+        },
+        {
+          "id": "arrow_rain", "name": "Дождь стрел", "key": "E",
+          "desc": "Урон по области.",
+          "type": "aoe_damage", "range": 6.0, "radius": 2.5, "damage": 110,
+          "mana": 75, "cooldown": 16.0, "color": [170, 255, 160]
+        }
+      ]
+    },
+    "pyromancer": {
+      "name": "Игнис",
+      "title": "Пиромант",
+      "primary": "int",
+      "color": [255, 140, 60],
+      "portrait": "assets/heroes/pyromancer.png",
+      "base": {
+        "hp": 180, "mana": 130, "damage": 32, "armor": 2,
+        "speed": 1.0, "atk_range": 4.5, "atk_cd": 0.8,
+        "radius": 0.33, "projectile_speed": 8.0,
+        "str": 16, "agi": 14, "int": 28
+      },
+      "growth": {"str": 1.5, "agi": 1.3, "int": 3.0},
+      "abilities": [
+        {
+          "id": "fireball", "name": "Огненный шар", "key": "Q",
+          "desc": "Урон по цели.",
+          "type": "target_damage", "range": 5.0, "damage": 70,
+          "mana": 35, "cooldown": 5.0, "color": [255, 150, 60]
+        },
+        {
+          "id": "fire_wall", "name": "Стена огня", "key": "W",
+          "desc": "Урон по области.",
+          "type": "aoe_damage", "range": 5.0, "radius": 2.0, "damage": 90,
+          "mana": 60, "cooldown": 12.0, "color": [255, 110, 40]
+        },
+        {
+          "id": "meteor", "name": "Метеор", "key": "E",
+          "desc": "Большой урон по области.",
+          "type": "aoe_damage", "range": 8.0, "radius": 3.0, "damage": 180,
+          "mana": 100, "cooldown": 24.0, "color": [255, 70, 40]
+        }
+      ]
+    },
+    "frost_mage": {
+      "name": "Мира",
+      "title": "Ледяная волшебница",
+      "primary": "int",
+      "color": [120, 210, 255],
+      "portrait": "assets/heroes/frost_mage.png",
+      "base": {
+        "hp": 190, "mana": 120, "damage": 28, "armor": 3,
+        "speed": 1.0, "atk_range": 4.5, "atk_cd": 0.8,
+        "radius": 0.33, "projectile_speed": 8.0,
+        "str": 18, "agi": 15, "int": 26
+      },
+      "growth": {"str": 1.7, "agi": 1.4, "int": 2.8},
+      "abilities": [
+        {
+          "id": "frost_bolt", "name": "Ледяная стрела", "key": "Q",
+          "desc": "Урон и замедление.",
+          "type": "target_damage", "range": 6.0, "damage": 55,
+          "slow": 0.5, "slow_duration": 2.5,
+          "mana": 30, "cooldown": 4.0, "color": [150, 230, 255]
+        },
+        {
+          "id": "ice_nova", "name": "Ледяная новая", "key": "W",
+          "desc": "Урон и замедление по области.",
+          "type": "aoe_damage", "range": 5.0, "radius": 2.5, "damage": 90,
+          "slow": 0.6, "slow_duration": 2.0,
+          "mana": 65, "cooldown": 14.0, "color": [140, 220, 255]
+        },
+        {
+          "id": "absolute_cold", "name": "Абсолютный холод", "key": "E",
+          "desc": "Сильный урон и замедление по области.",
+          "type": "aoe_damage", "range": 7.0, "radius": 3.5, "damage": 160,
+          "slow": 0.4, "slow_duration": 3.0,
+          "mana": 100, "cooldown": 26.0, "color": [200, 245, 255]
+        }
+      ]
+    },
+    "berserker": {
+      "name": "Гром",
+      "title": "Берсерк",
+      "primary": "str",
+      "color": [235, 100, 90],
+      "portrait": "assets/heroes/berserker.png",
+      "base": {
+        "hp": 230, "mana": 70, "damage": 36, "armor": 3,
+        "speed": 1.05, "atk_range": 2.8, "atk_cd": 0.7,
+        "radius": 0.37, "projectile_speed": 8.0,
+        "str": 28, "agi": 18, "int": 10
+      },
+      "growth": {"str": 2.8, "agi": 1.8, "int": 1.0},
+      "abilities": [
+        {
+          "id": "blood_strike", "name": "Кровавый удар", "key": "Q",
+          "desc": "Урон по цели.",
+          "type": "target_damage", "range": 2.8, "damage": 80,
+          "mana": 25, "cooldown": 5.0, "color": [255, 110, 100]
+        },
+        {
+          "id": "rage", "name": "Ярость", "key": "W",
+          "desc": "Ускоряет героя на 5 секунд.",
+          "type": "speed_buff", "multiplier": 1.6, "duration": 5.0,
+          "mana": 40, "cooldown": 12.0, "color": [255, 150, 120]
+        },
+        {
+          "id": "whirlwind", "name": "Вихрь", "key": "E",
+          "desc": "Урон по всем врагам вокруг.",
+          "type": "aoe_self", "radius": 3.0, "damage": 140,
+          "mana": 80, "cooldown": 18.0, "color": [255, 90, 80]
+        }
+      ]
+    }
+  }
+}

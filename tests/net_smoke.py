@@ -1,4 +1,4 @@
-"""Smoke-тест LAN-протокола: сервер + два клиента, без pygame.
+"""Smoke-тест LAN-протокола: сервер + лобби + два клиента, без pygame.
 
 Запуск из корня проекта:
     python tests/net_smoke.py
@@ -45,7 +45,7 @@ def wait_for(client: NetClient, mtype: str, timeout: float = 5.0):
                 return msg
             pending.append(msg)
         time.sleep(0.01)
-    raise AssertionError(f"no {mtype} from server, got {pending[:5]}")
+    raise AssertionError(f"no {mtype} from server, got {pending[:8]}")
 
 
 def main() -> int:
@@ -72,6 +72,29 @@ def main() -> int:
 
         assert welcome_a["player_id"] != welcome_b["player_id"], "same player id"
         assert {welcome_a["team"], welcome_b["team"]} == {"A", "B"}, "teams are not A/B"
+        assert welcome_a["host"] == welcome_a["player_id"], "first client is not host"
+
+        # Лобби: выбор героев и готовность.
+        a.send({"type": "select_hero", "hero": "knight"})
+        b.send({"type": "select_hero", "hero": "archer"})
+        time.sleep(0.2)
+        a.send({"type": "ready", "ready": True})
+        b.send({"type": "ready", "ready": True})
+        time.sleep(0.2)
+
+        time.sleep(0.4)
+        lobby_messages = [m for m in collect(a, 0.3) if m.get("type") == "lobby"]
+        assert lobby_messages, "no lobby updates"
+        lobby = lobby_messages[-1]
+        assert len(lobby["players"]) == 2, "lobby does not see both players"
+        heroes = {p["id"]: p["hero"] for p in lobby["players"]}
+        assert heroes[welcome_a["player_id"]] == "knight"
+        assert heroes[welcome_b["player_id"]] == "archer"
+
+        a.send({"type": "start"})
+        start_a = wait_for(a, "match_start")
+        assert start_a["players"][welcome_a["player_id"]]["hero"] == "knight"
+        assert start_a["players"][welcome_b["player_id"]]["hero"] == "archer"
 
         # Двигаем героев в разные стороны.
         a.send_command(1, {"type": "move", "x": 6.0, "y": 18.0})
@@ -83,7 +106,7 @@ def main() -> int:
 
         latest = snaps[-1]
         assert len(latest.get("players", {})) == 2, "expected 2 players"
-        assert len(latest.get("units", [])) >= 10, "expected towers and heroes"
+        assert len(latest.get("units", [])) >= 18, "expected towers, thrones and heroes"
 
         hero_a = latest["players"][welcome_a["player_id"]]["hero"]
         hero_b = latest["players"][welcome_b["player_id"]]["hero"]
@@ -93,7 +116,11 @@ def main() -> int:
         assert unit_a["y"] < 20.0 - 0.3, f"hero A did not move: {unit_a}"
         assert unit_b["x"] < 20.0 - 0.3, f"hero B did not move: {unit_b}"
 
-        print("OK: two clients connected")
+        player_a = latest["players"][welcome_a["player_id"]]
+        assert player_a["hero_id"] == "knight"
+        assert "mana" in player_a and "items" in player_a and "assists" in player_a
+
+        print("OK: lobby + match started")
         print("  player A:", welcome_a["player_id"], welcome_a["team"], "->", (unit_a["x"], unit_a["y"]))
         print("  player B:", welcome_b["player_id"], welcome_b["team"], "->", (unit_b["x"], unit_b["y"]))
         print("  snapshots:", len(snaps), "units in latest:", len(latest["units"]))

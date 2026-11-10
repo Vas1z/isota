@@ -1,0 +1,44 @@
+{
+  "items": {
+    "boots": {
+      "name": "Ботинки",
+      "cost": 250,
+      "desc": "+0.35 к скорости передвижения",
+      "icon": "assets/items/boots.png",
+      "bonus": {"speed": 0.35},
+      "unique": true
+    },
+    "blade": {
+      "name": "Клинок",
+      "cost": 450,
+      "desc": "+12 к урону",
+      "icon": "assets/items/blade.png",
+      "bonus": {"damage": 12},
+      "unique": false
+    },
+    "armor": {
+      "name": "Латы",
+      "cost": 400,
+      "desc": "+6 к броне",
+      "icon": "assets/items/armor.png",
+      "bonus": {"armor": 6},
+      "unique": false
+    },
+    "mana_crystal": {
+      "name": "Кристалл маны",
+      "cost": 300,
+      "desc": "+120 к максимальной мане",
+      "icon": "assets/items/mana_crystal.png",
+      "bonus": {"mana": 120},
+      "unique": false
+    },
+    "heart": {
+      "name": "Сердце",
+      "cost": 600,
+      "desc": "+150 к максимальному HP",
+      "icon": "assets/items/heart.png",
+      "bonus": {"hp": 150},
+      "unique": false
+    }
+  }
+}

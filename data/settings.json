@@ -31,13 +31,17 @@
     "creeps_per_wave": 5,
     "ranged_creeps": 1,
     "respawn_time": 5.0,
-    "xp_radius": 8.0
+    "xp_radius": 8.0,
+    "shop_radius": 6.0
   },
   "colors": {
     "bg":         [18, 24, 32],
     "grass":      [46, 84, 52],
     "grass2":     [52, 92, 58],
     "lane":       [110, 96, 60],
+    "river":      [28, 86, 132],
+    "river2":     [34, 100, 150],
+    "river_wave": [95, 175, 220],
     "base_a":     [60, 110, 200],
     "base_b":     [200, 70, 60],
     "hero":       [240, 220, 120],

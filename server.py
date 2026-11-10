@@ -1,16 +1,17 @@
-"""Авторитетный LAN-сервер.
+"""Авторитетный LAN-сервер с лобби.
 
 Запуск:
     python server.py --host 0.0.0.0 --port 8765
 
 Сервер не импортирует pygame. Клиенты присылают только команды
-(move/attack/stop), всё остальное считает и рассылает сервер.
+(лобби и игровые), всё остальное считает и рассылает сервер.
 """
 
 import argparse
 import asyncio
 import json
 import logging
+import socket
 import threading
 from typing import Optional
 
@@ -38,6 +39,8 @@ class Client:
         self.player_id: Optional[str] = None
         self.name = ""
         self.team: Optional[str] = None
+        self.hero_id: Optional[str] = None
+        self.ready = False
 
     async def writer_loop(self) -> None:
         try:
@@ -71,7 +74,6 @@ class Client:
             pass
 
     def stop(self) -> None:
-        # Освобождаем место, чтобы гарантированно положить сигнал остановки.
         try:
             while True:
                 self.queue.get_nowait()
@@ -84,18 +86,46 @@ class Client:
 
 
 class Room:
-    """Одна комната = один матч. Пока поддерживаем одну комнату на процесс."""
+    """Одна комната: лобби, выбор героев, затем матч."""
 
     def __init__(self, data: dict, max_players: int = DEFAULT_MAX_PLAYERS):
         self.data = data
         self.max_players = max_players
-        self.world = World(data)
         self.clients: dict[str, Client] = {}
         self._next_id = 1
         self.loop_task: Optional[asyncio.Task] = None
+        self.world: Optional[World] = None
+        self.started = False
+        self.host_id: Optional[str] = None
 
-    # ----- подключение -----
+    # ----- лобби -----
+    def lobby_state(self) -> dict:
+        return {
+            "type": "lobby",
+            "host": self.host_id,
+            "max_players": self.max_players,
+            "started": self.started,
+            "players": [
+                {
+                    "id": pid,
+                    "name": c.name,
+                    "team": c.team,
+                    "hero": c.hero_id,
+                    "ready": c.ready,
+                    "host": pid == self.host_id,
+                }
+                for pid, c in sorted(self.clients.items())
+            ],
+        }
+
+    def broadcast_lobby(self) -> None:
+        message = self.lobby_state()
+        for client in self.clients.values():
+            client.push(message)
+
     async def add_client(self, client: Client, name: str):
+        if self.started:
+            return False, "match already started"
         if len(self.clients) >= self.max_players:
             return False, "room is full"
 
@@ -106,62 +136,135 @@ class Room:
         client.player_id = player_id
         client.name = name
         client.team = team
+        client.hero_id = None
+        client.ready = False
         self.clients[player_id] = client
         client.writer_task = asyncio.create_task(client.writer_loop())
 
-        self.world.add_player(player_id, team, name)
+        if self.host_id is None:
+            self.host_id = player_id
 
         client.push({
             "type": "welcome",
             "version": PROTOCOL_VERSION,
             "player_id": player_id,
             "team": team,
+            "host": self.host_id,
             "tick_rate": TICK_RATE,
             "snapshot_rate": SNAPSHOT_RATE,
             "max_players": self.max_players,
+            "heroes": list(self.data["heroes"]["heroes"].keys()),
         })
-        client.push({"type": "snap", "data": self.world.snapshot()})
-
-        # Первый игрок запускает матч. Второй может подключиться позже.
-        self.start_loop()
+        self.broadcast_lobby()
 
         LOG.info("%s joined as %s (team %s)", client.name, player_id, team)
         return True, None
 
     def _pick_team(self) -> str:
-        a = sum(1 for p in self.world.players.values() if p.team == "A")
-        b = sum(1 for p in self.world.players.values() if p.team == "B")
+        a = sum(1 for c in self.clients.values() if c.team == "A")
+        b = sum(1 for c in self.clients.values() if c.team == "B")
         return "A" if a <= b else "B"
+
+    def handle_message(self, player_id: str, msg: dict) -> None:
+        client = self.clients.get(player_id)
+        if not client:
+            return
+
+        if self.started:
+            if msg.get("type") == "cmd" and isinstance(msg.get("cmd"), dict):
+                self.world.apply_command(player_id, msg["cmd"])
+            return
+
+        mtype = msg.get("type")
+        if mtype == "select_hero":
+            hero_id = msg.get("hero")
+            if hero_id in self.data["heroes"]["heroes"]:
+                client.hero_id = hero_id
+                self.broadcast_lobby()
+        elif mtype == "ready":
+            client.ready = bool(msg.get("ready", not client.ready))
+            self.broadcast_lobby()
+        elif mtype == "start":
+            self.start_match(player_id)
+
+    def start_match(self, requested_by: str) -> None:
+        if self.started:
+            return
+        client = self.clients.get(requested_by)
+        if client is None:
+            return
+        if requested_by != self.host_id:
+            client.push({"type": "error", "message": "Только хост может начать матч"})
+            return
+        if len(self.clients) < 2:
+            client.push({"type": "error", "message": "Нужен хотя бы один второй игрок"})
+            return
+        if not all(c.ready for c in self.clients.values()):
+            client.push({"type": "error", "message": "Не все игроки готовы"})
+            return
+
+        heroes = self.data["heroes"]["heroes"]
+        default_hero = next(iter(heroes))
+        for c in self.clients.values():
+            if c.hero_id not in heroes:
+                c.hero_id = default_hero
+
+        self.world = World(self.data)
+        for pid, c in self.clients.items():
+            self.world.add_player(pid, c.team, c.name, c.hero_id)
+
+        self.started = True
+        start_message = {
+            "type": "match_start",
+            "players": {
+                pid: {"team": c.team, "hero": c.hero_id}
+                for pid, c in self.clients.items()
+            },
+        }
+        for c in self.clients.values():
+            c.push(start_message)
+            c.push({"type": "snap", "data": self.world.snapshot()})
+
+        self.start_loop()
+        LOG.info("match started: %s", ", ".join(
+            f"{pid}={c.hero_id}" for pid, c in self.clients.items()
+        ))
 
     async def remove_client(self, player_id: str) -> None:
         client = self.clients.pop(player_id, None)
         if not client:
             return
 
-        self.world.remove_player(player_id)
+        if self.started and self.world:
+            self.world.remove_player(player_id)
+
         client.stop()
 
-        for other in self.clients.values():
-            other.push({
-                "type": "player_left",
-                "player_id": player_id,
-                "name": client.name,
-            })
+        if self.host_id == player_id:
+            self.host_id = next(iter(self.clients), None)
+
+        if self.clients:
+            if self.started:
+                for other in self.clients.values():
+                    other.push({
+                        "type": "player_left",
+                        "player_id": player_id,
+                        "name": client.name,
+                    })
+            else:
+                self.broadcast_lobby()
+        else:
+            # Пустая комната начинает с чистого лобби.
+            self.world = None
+            self.started = False
+            self.host_id = None
+            self._next_id = 1
 
         LOG.info("%s (%s) disconnected", client.name, player_id)
 
-        if not self.clients:
-            # Матч без игроков не держим: следующий заход начнёт новый.
-            self.world = World(self.data)
-            self._next_id = 1
-
-    def handle_command(self, player_id: str, cmd: dict) -> None:
-        if player_id in self.clients:
-            self.world.apply_command(player_id, cmd)
-
     # ----- игровой цикл -----
     def start_loop(self) -> None:
-        if self.loop_task is None or self.loop_task.done():
+        if self.started and (self.loop_task is None or self.loop_task.done()):
             self.loop_task = asyncio.create_task(self._match_loop())
 
     async def _match_loop(self) -> None:
@@ -173,7 +276,7 @@ class Room:
 
         LOG.info("match loop started (tick=%s Hz)", TICK_RATE)
         try:
-            while self.clients:
+            while self.clients and self.started and self.world:
                 tick += 1
                 next_tick += tick_dt
                 delay = next_tick - loop.time()
@@ -182,9 +285,6 @@ class Room:
 
                 self.world.tick(tick_dt)
 
-                # Снапшоты привязываем к номеру тика, а не к wall-clock:
-                # иначе при 30 Гц и дрожании asyncio можно случайно
-                # отправлять снапшот через тик.
                 if tick % snapshot_every == 0:
                     message = {"type": "snap", "data": self.world.snapshot()}
                     if self.world.events:
@@ -247,13 +347,10 @@ class GameServer:
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     continue
 
-                mtype = msg.get("type")
-                if mtype == "cmd":
-                    cmd = msg.get("cmd")
-                    if isinstance(cmd, dict):
-                        self.room.handle_command(client.player_id, cmd)
-                elif mtype == "ping":
+                if msg.get("type") == "ping":
                     client.push({"type": "pong", "t": msg.get("t")})
+                else:
+                    self.room.handle_message(client.player_id, msg)
         except (asyncio.TimeoutError, ConnectionError, asyncio.IncompleteReadError):
             pass
         except Exception:
@@ -296,18 +393,34 @@ def start_background_server(host: str = "0.0.0.0", port: int = DEFAULT_PORT,
                             max_players: int = DEFAULT_MAX_PLAYERS) -> threading.Thread:
     """Запускает сервер в фоновом потоке (для режима `main.py --host`)."""
     ready = threading.Event()
+    errors: dict = {}
 
     def run() -> None:
         try:
             asyncio.run(serve(host, port, ready=ready, max_players=max_players))
-        except Exception:
+        except Exception as exc:
+            errors["error"] = exc
             LOG.exception("background server failed")
 
     thread = threading.Thread(target=run, name="isota-server", daemon=True)
     thread.start()
 
     if not ready.wait(timeout=5.0):
-        raise RuntimeError("server did not start (port busy or data error)")
+        reason = errors.get("error")
+        raise RuntimeError(f"server did not start: {reason or 'timeout'}")
+
+    if not thread.is_alive():
+        reason = errors.get("error")
+        raise RuntimeError(f"server stopped right after start: {reason or 'unknown error'}")
+
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1.5):
+            pass
+    except OSError as exc:
+        raise RuntimeError(
+            f"server is not accepting connections on 127.0.0.1:{port}: {exc}"
+        ) from exc
+
     return thread
 
 

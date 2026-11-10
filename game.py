@@ -9,9 +9,12 @@ from typing import List, Optional, Tuple
 
 import pygame
 
+import gfx
 import loader
 from console import Console
+from menu import MenuUI
 from netclient import NetClient
+from shared.netutil import lan_ip
 from shared.protocol import DEFAULT_PORT
 from shared.sim import Unit, World
 from ui import FloatingText, UI
@@ -52,6 +55,19 @@ class ProjectileView:
 class Snapshot:
     t: float
     data: dict
+
+
+@dataclass
+class AbilityEffect:
+    x: float
+    y: float
+    radius: float
+    color: Tuple[int, int, int]
+    lifetime: float = 0.6
+    max_lifetime: float = 0.6
+
+    def update(self, dt: float) -> None:
+        self.lifetime -= dt
 
 
 # Насколько клиент отстаёт от последнего снапшота. Даёт буфер для интерполяции.
@@ -95,7 +111,14 @@ class Game:
         loader.validate(self.data)
 
         self.Grid = Grid
-        self.max_level = int(self.data["hero"].get("progression", {}).get("max_level", 10))
+        self.heroes_data = self.data["heroes"]
+        self.progression = self.heroes_data.get("progression", {})
+        self.heroes = self.heroes_data["heroes"]
+        self.hero_order = list(self.heroes.keys())
+        self.items_data = self.data["items"]["items"]
+        self.max_level = int(self.progression.get("max_level", 10))
+        self.selected_hero = self.hero_order[0]
+        self.hero_id = self.selected_hero
 
         self.cfg = self.data["settings"]
         self.controls = self.data["controls"]
@@ -122,6 +145,9 @@ class Game:
         }
 
         self.net_mode = mode == "net"
+        self.state = "lobby" if self.net_mode else "menu"
+        self.player_name = name
+        self.port = port
         self.max_players = 1
         self.online_players = 0
         self.player_id: Optional[str] = None
@@ -132,6 +158,15 @@ class Game:
         self.status_message = ""
         self.ping_ms = 0
         self.server_addr = ""
+        self.lan_ip = ""
+        self.lobby: dict = {}
+        self.host_id: Optional[str] = None
+        self.is_host = False
+        self.menu_message = ""
+        self.menu_ip = host or "127.0.0.1"
+        self.menu_ip_focus = False
+        self.local_server_thread = None
+        self.local_server_port = None
         self.quit_requested = False
         self._manual_ping = False
         self._ping_timer = 0.0
@@ -147,11 +182,25 @@ class Game:
         self.match_time = 0.0
         self.gold = 0
         self.cs = 0
+        self.denies = 0
         self.kills = 0
         self.deaths = 0
+        self.assists = 0
         self.level = 1
         self.xp = 0.0
         self.xp_next = 100.0
+        self.mana = 0.0
+        self.max_mana = 0.0
+        self.str = 0.0
+        self.agi = 0.0
+        self.int = 0.0
+        self.items: List[str] = []
+        self.cooldowns: dict = {}
+        self.abilities: list = []
+        self.pending_ability: Optional[int] = None
+        self.shop_open = False
+        self.shop_message = ""
+        self.ability_effects: list = []
         self.respawn_timer = 0.0
         self.match_over = False
         self.winner: Optional[str] = None
@@ -159,11 +208,16 @@ class Game:
         self.move_marker: Optional[Tuple[float, float]] = None
         self.attack_marker_uid: Optional[int] = None
 
-        # --- подключение/симуляция до создания окна ---
+        # --- подключение до создания окна ---
         if self.net_mode:
             self._connect(host or "127.0.0.1", port, name)
+            self.state = "lobby"
+            try:
+                self.net.send({"type": "select_hero", "hero": self.selected_hero})
+            except (ConnectionError, OSError):
+                self.disconnected = True
         else:
-            self._start_offline(name)
+            self.state = "menu"
 
         # --- pygame ---
         pygame.init()
@@ -189,9 +243,23 @@ class Game:
         self.ui = UI(self)
         self.creep_sprites = {}
         self._sprite_cache = {}
+        self.sprite_errors = []
         self._load_creep_sprites()
+        self.item_icons = {}
+        near = Path(__file__).parent
+        for item_id, item in self.items_data.items():
+            icon_name = item.get("icon")
+            if icon_name:
+                image = gfx.load_sprite(near / icon_name)
+                if image is not None:
+                    self.item_icons[item_id] = image
         self.console = Console(self)
-        self._center_camera_on_team_spawn()
+        self.menu = MenuUI(self)
+        if self.state == "game":
+            self._center_camera_on_team_spawn()
+
+        for name, error in self.sprite_errors:
+            self.console.log(f"sprite {name}: {error}", (255, 180, 120))
 
         if self.net_mode:
             self.console.log(
@@ -203,9 +271,19 @@ class Game:
         self.console.log("press ~ or F1 to open this console", (150, 150, 150))
 
     # ---------- режимы ----------
-    def _start_offline(self, name: str) -> None:
+    def _setup_abilities(self) -> None:
+        hero_cfg = self.heroes.get(self.hero_id, {})
+        self.abilities = list(hero_cfg.get("abilities", []))
+
+    def start_offline_game(self, hero_id: Optional[str] = None) -> None:
+        if hero_id not in self.heroes:
+            hero_id = self.hero_order[0]
+        self.selected_hero = hero_id
+        self.hero_id = hero_id
+        self.net_mode = False
+        self.state = "game"
         self.world = World(self.data)
-        self.world.add_player("local", "A", name)
+        self.world.add_player("local", "A", self.player_name, hero_id)
         self.player_id = "local"
         self.team = "A"
         self.max_players = 1
@@ -213,10 +291,51 @@ class Game:
         self.hero = self.world.players["local"].hero
         self.hero_uid = self.hero.uid
         self.units = self.world.units
+        self.projectiles = []
+        self.snaps.clear()
+        self.match_over = False
+        self.winner = None
+        self.shop_open = False
+        self.shop_message = ""
+        self.pending_ability = None
+        self.move_marker = None
+        self.attack_marker_uid = None
+        self.floating_texts = []
+        self.ability_effects = []
+        self.disconnected = False
+        self.status_message = ""
+        self.menu_message = ""
         self._sync_offline_player()
+        self._setup_abilities()
+        self._center_camera_on_team_spawn()
+        self.console.log(
+            f"offline game started: {self.heroes[hero_id]['name']}",
+            (150, 220, 150),
+        )
 
     def _connect(self, host: str, port: int, name: str) -> None:
-        self.net = NetClient(host, port, name)
+        last_error = None
+
+        # Если сервер только поднимается (или хост перезапустил игру),
+        # несколько быстрых попыток заметно снижают шанс поймать отказ.
+        for attempt in range(3):
+            try:
+                self.net = NetClient(host, port, name, connect_timeout=3.0)
+                last_error = None
+                break
+            except ConnectionRefusedError as exc:
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(0.7)
+            except OSError as exc:
+                last_error = exc
+                break
+
+        if self.net is None:
+            raise RuntimeError(
+                f"не удалось подключиться к {host}:{port}: {last_error}"
+            ) from last_error
+
         deadline = time.monotonic() + 5.0
 
         while time.monotonic() < deadline:
@@ -226,20 +345,50 @@ class Game:
                     self.player_id = msg.get("player_id")
                     self.team = msg.get("team", "A")
                     self.max_players = int(msg.get("max_players", 2))
+                    self.host_id = msg.get("host")
+                    self.is_host = self.host_id == self.player_id
                     self.server_addr = f"{host}:{port}"
+                    self.lan_ip = lan_ip()
                     self.status_message = f"Онлайн: {host}:{port}"
                     return
                 if mtype == "error":
+                    message = msg.get("message", "server error")
                     self.net.close()
-                    raise RuntimeError(msg.get("message", "server error"))
+                    raise RuntimeError(f"сервер {host}:{port}: {message}")
                 if mtype == "_disconnected":
-                    raise RuntimeError("server closed connection")
+                    raise RuntimeError(f"сервер {host}:{port} закрыл соединение")
             time.sleep(0.01)
 
         self.net.close()
-        raise RuntimeError("server did not send welcome")
+        raise RuntimeError(
+            f"сервер {host}:{port} не прислал welcome "
+            "(порт занят другим сервисом?)"
+        )
 
     # ---------- спрайты ----------
+    def _load_sprite_image(self, path: Path):
+        """Загружает PNG через pygame, а при проблемах с libpng — через Pillow."""
+        try:
+            return pygame.image.load(str(path)).convert_alpha()
+        except pygame.error as pygame_error:
+            try:
+                from PIL import Image
+
+                with Image.open(path) as pil_image:
+                    pil_image = pil_image.convert("RGBA")
+                    size = pil_image.size
+                    data = pil_image.tobytes()
+
+                return pygame.image.fromstring(data, size, "RGBA").convert_alpha()
+            except Exception as pillow_error:
+                self.sprite_errors.append(
+                    (path.name, f"pygame: {pygame_error}; Pillow: {pillow_error}")
+                )
+                return None
+        except OSError as exc:
+            self.sprite_errors.append((path.name, str(exc)))
+            return None
+
     def _load_creep_sprites(self) -> None:
         assets = Path(__file__).parent / "assets"
         for team, filename in (
@@ -249,9 +398,9 @@ class Game:
             path = assets / filename
             if not path.exists():
                 continue
-            try:
-                image = pygame.image.load(str(path)).convert_alpha()
-            except (pygame.error, OSError):
+
+            image = self._load_sprite_image(path)
+            if image is None:
                 continue
 
             # Обрезаем прозрачные поля, чтобы персонаж занимал весь спрайт.
@@ -264,7 +413,10 @@ class Game:
     def reload_sprites(self):
         self.creep_sprites.clear()
         self._sprite_cache.clear()
+        self.sprite_errors.clear()
         self._load_creep_sprites()
+        for name, error in self.sprite_errors:
+            self.console.log(f"sprite {name}: {error}", (255, 180, 120))
         return sorted(self.creep_sprites)
 
     def _get_creep_sprite(self, team: str, size: int):
@@ -296,13 +448,23 @@ class Game:
         player = self.world.players[self.player_id]
         self.hero = player.hero
         self.hero_uid = player.hero.uid
+        self.hero_id = player.hero_id
         self.gold = int(player.gold)
         self.cs = player.cs
+        self.denies = player.denies
         self.kills = player.kills
         self.deaths = player.deaths
+        self.assists = player.assists
         self.level = player.level
         self.xp = player.xp
         self.xp_next = player.xp_next
+        self.str = player.str
+        self.agi = player.agi
+        self.int = player.int
+        self.mana = player.mana
+        self.max_mana = player.max_mana
+        self.items = list(player.items)
+        self.cooldowns = dict(player.cooldowns)
         self.respawn_timer = player.respawn_timer
         self.match_time = self.world.match_time
         self.match_over = self.world.match_over
@@ -332,6 +494,40 @@ class Game:
                 for event in msg.get("events", []):
                     self._handle_event(event)
 
+            elif mtype == "lobby":
+                self.lobby = msg
+                self.host_id = msg.get("host")
+                self.is_host = self.host_id == self.player_id
+                if self.state != "game":
+                    self.state = "lobby"
+
+            elif mtype == "match_start":
+                self.state = "game"
+                self.match_over = False
+                self.winner = None
+                self.status_message = ""
+                self.snaps.clear()
+                self.shop_open = False
+                self.shop_message = ""
+                self.pending_ability = None
+                self.move_marker = None
+                self.attack_marker_uid = None
+                self.units = []
+                self.projectiles = []
+                self.hero = None
+                self.hero_uid = None
+                self.floating_texts = []
+                self.ability_effects = []
+                self.match_time = 0.0
+                info = (msg.get("players") or {}).get(self.player_id, {})
+                hero_id = info.get("hero")
+                if hero_id in self.heroes:
+                    self.hero_id = hero_id
+                    self.selected_hero = hero_id
+                self._setup_abilities()
+                self.console.log("match started", (150, 220, 150))
+                self._center_camera_on_team_spawn()
+
             elif mtype == "pong":
                 sent = msg.get("t")
                 if isinstance(sent, (int, float)):
@@ -348,12 +544,14 @@ class Game:
             elif mtype == "error":
                 text = f"Сервер: {msg.get('message', 'error')}"
                 self.status_message = text
+                self.menu_message = text
                 self.console.log(text, (255, 120, 120))
 
             elif mtype == "_disconnected":
                 self.disconnected = True
                 self._manual_ping = False
                 self.status_message = "Соединение потеряно"
+                self.menu_message = "Соединение потеряно"
                 self.console.log("disconnected from server", (255, 120, 120))
 
     def _handle_event(self, event: dict) -> None:
@@ -383,6 +581,36 @@ class Game:
                     lifetime=1.2,
                     vy=-50,
                 ))
+        elif kind == "deny" and event.get("player") == self.player_id:
+            sx, sy = Grid.to_screen(event.get("x", 0), event.get("y", 0))
+            self.floating_texts.append(FloatingText(
+                text="DENY!",
+                pos=(sx, sy - 25),
+                color=(200, 150, 255),
+                lifetime=0.9,
+                vy=-35,
+            ))
+            self.console.log("deny! own creep killed", (200, 150, 255))
+        elif kind == "purchase" and event.get("player") == self.player_id:
+            item = self.items_data.get(event.get("item"), {})
+            self.console.log(
+                f"purchased: {item.get('name', event.get('item'))}",
+                (180, 230, 150),
+            )
+            self.shop_message = f"Куплено: {item.get('name', event.get('item'))}"
+        elif kind == "shop_error" and event.get("player") == self.player_id:
+            self.shop_message = str(event.get("message", "Ошибка магазина"))
+            self.console.log(f"shop: {self.shop_message}", (255, 160, 100))
+        elif kind == "ability":
+            color = event.get("color", [255, 255, 255])
+            self.ability_effects.append(AbilityEffect(
+                x=float(event.get("x", 0)),
+                y=float(event.get("y", 0)),
+                radius=max(0.6, float(event.get("radius", 0.0))),
+                color=tuple(color) if isinstance(color, (list, tuple)) else (255, 255, 255),
+                lifetime=0.7,
+                max_lifetime=0.7,
+            ))
         elif kind == "match_end":
             self.match_over = True
             winner = event.get("winner")
@@ -413,11 +641,28 @@ class Game:
                 self.hero_uid = int(me["hero"])
             self.gold = int(me.get("gold", 0))
             self.cs = int(me.get("cs", 0))
+            self.denies = int(me.get("denies", 0))
             self.kills = int(me.get("kills", 0))
             self.deaths = int(me.get("deaths", 0))
+            self.assists = int(me.get("assists", 0))
             self.level = int(me.get("level", 1))
             self.xp = float(me.get("xp", 0.0))
             self.xp_next = float(me.get("xp_next", 100.0))
+            self.str = float(me.get("str", 0.0))
+            self.agi = float(me.get("agi", 0.0))
+            self.int = float(me.get("int", 0.0))
+            self.mana = float(me.get("mana", 0.0))
+            self.max_mana = float(me.get("max_mana", 0.0))
+            self.items = list(me.get("items", []))
+            self.cooldowns = {
+                int(slot): float(cd)
+                for slot, cd in (me.get("cooldowns") or {}).items()
+            }
+            hero_id = me.get("hero_id")
+            if hero_id in self.heroes:
+                self.hero_id = hero_id
+                self.selected_hero = hero_id
+            self._setup_abilities()
             self.respawn_timer = float(me.get("respawn", 0.0))
         self.match_time = float(latest.get("time", 0.0))
         self.match_over = bool(latest.get("over", False))
@@ -538,29 +783,211 @@ class Game:
         elif self.world:
             self.world.apply_command(self.player_id, cmd)
 
+    # ---------- лобби/меню ----------
+    def lobby_ip(self) -> str:
+        if self.is_host and self.lan_ip:
+            return f"{self.lan_ip}:{self.port}"
+        return self.server_addr or f"127.0.0.1:{self.port}"
+
+    def connect_net(self, host: str, port: int) -> bool:
+        if self.net:
+            self.net.close()
+        self.net = None
+        self.net_mode = True
+        self.disconnected = False
+        self.snaps.clear()
+        self.state = "lobby"
+        self.menu_message = f"Подключение к {host}:{port}..."
+
+        try:
+            self._connect(host, port, self.player_name)
+        except Exception as exc:
+            if self.net:
+                self.net.close()
+            self.net = None
+            self.net_mode = False
+            self.state = "menu"
+            self.menu_message = str(exc)
+            return False
+
+        self.port = port
+        self.menu_ip = host
+        self.state = "lobby"
+        self.is_host = self.host_id == self.player_id
+        self._setup_abilities()
+        self.console.log(
+            f"connected to {host}:{port} as {self.player_id}",
+            (120, 220, 150),
+        )
+        try:
+            self.net.send({"type": "select_hero", "hero": self.selected_hero})
+        except (ConnectionError, OSError):
+            self.disconnected = True
+        return True
+
+    def start_host_lobby(self) -> bool:
+        from server import start_background_server
+
+        if self.local_server_thread is not None and self.local_server_thread.is_alive():
+            self.port = self.local_server_port
+        else:
+            last_error = None
+            for candidate in range(self.port, self.port + 5):
+                try:
+                    thread = start_background_server("0.0.0.0", candidate)
+                    self.local_server_thread = thread
+                    self.local_server_port = candidate
+                    self.port = candidate
+                    break
+                except Exception as exc:
+                    last_error = exc
+            else:
+                self.menu_message = f"Не удалось поднять сервер: {last_error}"
+                return False
+
+        self.lan_ip = lan_ip()
+        if not self.connect_net("127.0.0.1", self.port):
+            return False
+
+        self.menu_message = f"Лобби создано. IP: {self.lan_ip}:{self.port}"
+        return True
+
+    def join_lobby(self, host: str, port: int) -> bool:
+        self.menu_message = f"Подключение к {host}:{port}..."
+        return self.connect_net(host, port)
+
+    def leave_lobby(self) -> None:
+        if self.net:
+            self.net.close()
+        self.net = None
+        self.net_mode = False
+        self.state = "menu"
+        self.lobby = {}
+        self.disconnected = False
+        self.menu_message = "Вы вышли из лобби"
+
+    def toggle_ready(self) -> None:
+        if not self.net or self.state != "lobby":
+            return
+        me = next(
+            (p for p in self.lobby.get("players", []) if p.get("id") == self.player_id),
+            None,
+        )
+        ready = not bool(me and me.get("ready"))
+        try:
+            self.net.send({"type": "ready", "ready": ready})
+        except (ConnectionError, OSError):
+            self.disconnected = True
+
+    def start_match(self) -> None:
+        if not self.net or not self.is_host:
+            return
+        try:
+            self.net.send({"type": "start"})
+        except (ConnectionError, OSError):
+            self.disconnected = True
+
+    # ---------- магазин/способности ----------
+    def toggle_shop(self) -> None:
+        self.shop_open = not self.shop_open
+        self.pending_ability = None
+        self.shop_message = ""
+
+    def shop_click(self, pos: Tuple[int, int]) -> None:
+        item_id = self.ui.shop_hit(pos)
+        if not item_id:
+            return
+        self._send_cmd({"type": "buy", "item": item_id})
+
+    def cast_ability(self, slot: int) -> None:
+        if self.state != "game" or self.match_over:
+            return
+        if slot < 0 or slot >= len(self.abilities):
+            return
+        ability = self.abilities[slot]
+        if self.cooldowns.get(slot, 0.0) > 0:
+            self.status_message = "Способность ещё на кулдауне"
+            return
+        if self.mana < float(ability.get("mana", 0)):
+            self.status_message = "Недостаточно маны"
+            return
+        atype = ability.get("type")
+        if atype == "target_damage":
+            self.pending_ability = slot
+            self.shop_open = False
+            self.status_message = f"Выбери цель: {ability.get('name')}"
+        elif atype == "aoe_damage":
+            self.pending_ability = slot
+            self.shop_open = False
+            self.status_message = f"Выбери точку: {ability.get('name')}"
+        else:
+            self._send_cmd({"type": "cast", "slot": slot})
+
+    def ability_click(self) -> None:
+        if self.pending_ability is None or self.state != "game" or self.match_over:
+            return
+        slot = self.pending_ability
+        ability = self.abilities[slot]
+        mx, my = pygame.mouse.get_pos()
+        wx = mx + self.camera.x
+        wy = my + self.camera.y
+        gx, gy = Grid.to_grid(wx, wy)
+
+        if ability.get("type") == "target_damage":
+            target = None
+            best = 1.0
+            for unit in self.units:
+                if not unit.alive or unit.team == self.team:
+                    continue
+                d = dist((gx, gy), unit.pos)
+                if d < best:
+                    best = d
+                    target = unit
+            if target is None:
+                self.status_message = "Цель не выбрана"
+                return
+            self._send_cmd({"type": "cast", "slot": slot, "target": target.uid})
+        else:
+            self._send_cmd({"type": "cast", "slot": slot, "x": gx, "y": gy})
+        self.pending_ability = None
+        self.status_message = ""
+
     def command_click(self) -> None:
         if self.match_over:
             return
 
+        self.pending_ability = None
         mx, my = pygame.mouse.get_pos()
         wx = mx + self.camera.x
         wy = my + self.camera.y
         gx, gy = Grid.to_grid(wx, wy)
 
         target = None
+        deny = False
         best_d = 1.0
+
         for unit in self.units:
-            if not unit.alive or unit.team == self.team:
+            if not unit.alive:
                 continue
+            is_deny = False
+            if unit.team == self.team:
+                if unit.kind in ("creep", "creep_ranged") and unit.hp <= 0.4 * unit.max_hp:
+                    is_deny = True
+                else:
+                    continue
             d = dist((gx, gy), unit.pos)
             if d < best_d:
                 best_d = d
                 target = unit
+                deny = is_deny
 
         if target is not None:
             self.attack_marker_uid = target.uid
             self.move_marker = None
-            self._send_cmd({"type": "attack", "target": target.uid})
+            self._send_cmd({
+                "type": "deny" if deny else "attack",
+                "target": target.uid,
+            })
         else:
             if 0 <= gx <= Grid.grid_w and 0 <= gy <= Grid.grid_h:
                 self.move_marker = (gx, gy)
@@ -621,11 +1048,28 @@ class Game:
                 self.attack_marker_uid = None
 
     # ---------- обновление ----------
+    def _update_ping(self, dt: float) -> None:
+        if self.net_mode and not self.disconnected and self.net:
+            self._ping_timer += dt
+            if self._ping_timer >= 2.0:
+                self._ping_timer = 0.0
+                try:
+                    self.net.send_ping()
+                except (ConnectionError, OSError):
+                    self.disconnected = True
+                    self.status_message = "Соединение потеряно"
+
     def update(self, dt: float) -> None:
+        if self.net_mode:
+            self._pump_net()
+
+        if self.state != "game":
+            self._update_ping(dt)
+            return
+
         self.handle_input(dt)
 
         if self.net_mode:
-            self._pump_net()
             self._update_net_view()
         elif self.world:
             self.world.tick(dt)
@@ -642,15 +1086,11 @@ class Game:
             ft.update(dt)
         self.floating_texts = [ft for ft in self.floating_texts if ft.lifetime > 0]
 
-        if self.net_mode and not self.disconnected and self.net:
-            self._ping_timer += dt
-            if self._ping_timer >= 2.0:
-                self._ping_timer = 0.0
-                try:
-                    self.net.send_ping()
-                except (ConnectionError, OSError):
-                    self.disconnected = True
-                    self.status_message = "Соединение потеряно"
+        for effect in self.ability_effects:
+            effect.update(dt)
+        self.ability_effects = [e for e in self.ability_effects if e.lifetime > 0]
+
+        self._update_ping(dt)
 
     # ---------- отрисовка ----------
     def _tile(self, surface, gx, gy, color, size=1.0):
@@ -729,6 +1169,20 @@ class Game:
                 col = c["grass"] if (gx + gy) % 2 == 0 else c["grass2"]
                 self._tile(surface, gx, gy, col, 1.0)
 
+        # Река по главной диагонали: из левого верхнего в правый нижний угол.
+        river_color = c.get("river", (28, 86, 132))
+        river_color2 = c.get("river2", (34, 100, 150))
+        wave_color = c.get("river_wave", (95, 175, 220))
+        for gx in range(Grid.grid_w):
+            for gy in range(Grid.grid_h):
+                cx = gx + 0.5
+                cy = gy + 0.5
+                if abs(cx - cy) <= 1.15:
+                    col = river_color if (gx + gy) % 2 == 0 else river_color2
+                    self._tile(surface, gx, gy, col, 1.0)
+                    if (gx * 7 + gy * 3) % 9 == 0:
+                        self._tile(surface, gx + 0.25, gy + 0.4, wave_color, 0.18)
+
         for path in self.lanes.values():
             for i in range(len(path) - 1):
                 x1, y1 = path[i]
@@ -774,21 +1228,12 @@ class Game:
 
         sprite_rect = None
         if unit.kind in ("creep", "creep_ranged"):
-            sprite_size = int((22 if unit.kind == "creep" else 18) * Grid.zoom)
+            sprite_size = int((18 if unit.kind == "creep" else 15) * Grid.zoom)
             sprite = self._get_creep_sprite(unit.team, sprite_size)
             if sprite is not None:
-                sw, sh = sprite.get_size()
-                pygame.draw.ellipse(
-                    surface, (0, 0, 0, 95),
-                    (
-                        int(sx - sw * 0.42),
-                        int(sy + sprite_size * 0.02),
-                        int(sw * 0.84),
-                        max(4, int(sprite_size * 0.22)),
-                    ),
-                )
+                # У спрайтов уже есть мягкая тень, второй овал не нужен.
                 sprite_rect = sprite.get_rect(
-                    midbottom=(int(sx), int(sy + sprite_size * 0.18))
+                    midbottom=(int(sx), int(sy + sprite_size * 0.12))
                 )
                 surface.blit(sprite, sprite_rect)
 
@@ -893,6 +1338,25 @@ class Game:
                 sx, sy = self.camera.apply(sx, sy)
                 pygame.draw.circle(surface, (255, 80, 80), (int(sx), int(sy)), 20, 2)
 
+        for effect in self.ability_effects:
+            sx, sy = Grid.to_screen(effect.x, effect.y)
+            sx, sy = self.camera.apply(sx, sy)
+            progress = 1.0 - max(0.0, effect.lifetime) / max(0.001, effect.max_lifetime)
+            base_r = max(10.0, effect.radius * Grid.tile_size * Grid.zoom)
+            radius = int(base_r * (0.35 + 0.65 * progress))
+            alpha = int(180 * (effect.lifetime / max(0.001, effect.max_lifetime)))
+            pygame.draw.circle(surface, (*effect.color, max(25, alpha // 5)),
+                               (int(sx), int(sy)), radius)
+            pygame.draw.circle(surface, (*effect.color, alpha),
+                               (int(sx), int(sy)), radius, 2)
+
+        if self.pending_ability is not None and self.pending_ability < len(self.abilities):
+            ability = self.abilities[self.pending_ability]
+            color = tuple(ability.get("color", (255, 255, 255)))
+            mx, my = pygame.mouse.get_pos()
+            pygame.draw.circle(surface, (*color, 200), (mx, my), 12, 2)
+            pygame.draw.circle(surface, (*color, 120), (mx, my), 4)
+
         for unit in sorted(self.units, key=lambda u: u.pos[1]):
             if unit.alive or unit.kind == "throne":
                 self.draw_unit(surface, unit)
@@ -905,18 +1369,26 @@ class Game:
         self.ui.draw_floating_texts(surface)
 
     def draw(self):
-        self.screen.fill(self.colors["bg"])
+        if self.state == "menu":
+            self.menu.draw_menu(self.screen, self)
+        elif self.state == "lobby":
+            self.menu.draw_lobby(self.screen, self)
+        else:
+            self.screen.fill(self.colors["bg"])
 
-        world = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
-        self.draw_world(world)
-        self.screen.blit(world, (0, 0))
+            world = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
+            self.draw_world(world)
+            self.screen.blit(world, (0, 0))
 
-        if self.show_ui:
-            self.ui.draw_minimap(self.screen)
-            self.ui.draw_hud(self.screen)
+            if self.show_ui:
+                self.ui.draw_minimap(self.screen)
+                self.ui.draw_hud(self.screen)
 
-        if self.match_over:
-            self.ui.draw_match_end(self.screen)
+            if self.shop_open:
+                self.ui.draw_shop(self.screen)
+
+            if self.match_over:
+                self.ui.draw_match_end(self.screen)
 
         # Консоль рисуется поверх всего, даже если HUD выключен.
         if self.console.open:
@@ -944,6 +1416,22 @@ class Game:
                         self.console.handle_key(event)
                         continue
 
+                    if self.state in ("menu", "lobby"):
+                        if event.key == pygame.K_ESCAPE:
+                            if self.state == "lobby":
+                                self.leave_lobby()
+                            elif self.menu_ip_focus:
+                                self.menu_ip_focus = False
+                            else:
+                                running = False
+                        elif event.key == pygame.K_F11:
+                            self.toggle_fullscreen()
+                        elif event.key == pygame.K_o:
+                            self.show_ui = not self.show_ui
+                        else:
+                            self.menu.handle_key(event, self)
+                        continue
+
                     if event.key == pygame.K_ESCAPE:
                         running = False
                     elif event.key == pygame.K_F11:
@@ -952,6 +1440,14 @@ class Game:
                         self.show_ui = not self.show_ui
                     elif event.key == pygame.K_s:
                         self.command_stop()
+                    elif event.key == pygame.K_b:
+                        self.toggle_shop()
+                    elif event.key == pygame.K_q:
+                        self.cast_ability(0)
+                    elif event.key == pygame.K_w:
+                        self.cast_ability(1)
+                    elif event.key == pygame.K_e:
+                        self.cast_ability(2)
                     continue
 
                 # Пока открыта консоль, не командуем героем мышью.
@@ -960,9 +1456,22 @@ class Game:
                 ):
                     continue
 
+                if self.state in ("menu", "lobby"):
+                    if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                        self.menu.handle_click(pygame.mouse.get_pos(), self)
+                    continue
+
                 if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:
+                        if self.shop_open:
+                            self.shop_click(pygame.mouse.get_pos())
+                        else:
+                            self.ability_click()
                     if event.button == 3:
-                        self.command_click()
+                        if self.shop_open:
+                            self.shop_open = False
+                        else:
+                            self.command_click()
                     if event.button == 2:
                         self._mmb_down = True
                         self._mmb_last = pygame.mouse.get_pos()

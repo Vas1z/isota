@@ -44,6 +44,12 @@ class Unit:
     proj_color: Tuple[int, int, int] = (255, 240, 150)
     owner_player: Optional[str] = None
     death_processed: bool = False
+    speed_mult: float = 1.0
+    speed_buff_timer: float = 0.0
+    slow_mult: float = 1.0
+    slow_timer: float = 0.0
+    stun_timer: float = 0.0
+    damage_contributors: set = field(default_factory=set)
 
     # ----- обновление -----
     def update(self, dt: float, units: List["Unit"], projectiles: List["Projectile"]) -> None:
@@ -55,6 +61,18 @@ class Unit:
             return
 
         self.atk_timer = max(0.0, self.atk_timer - dt)
+
+        self.speed_buff_timer = max(0.0, self.speed_buff_timer - dt)
+        if self.speed_buff_timer <= 0:
+            self.speed_mult = 1.0
+
+        self.slow_timer = max(0.0, self.slow_timer - dt)
+        if self.slow_timer <= 0:
+            self.slow_mult = 1.0
+
+        self.stun_timer = max(0.0, self.stun_timer - dt)
+        if self.stun_timer > 0:
+            return
 
         if self.kind == "hero":
             self._update_hero(dt, units, projectiles)
@@ -95,10 +113,12 @@ class Unit:
                 self._move_towards(self.move_target, dt)
 
     def _move_towards(self, target: Tuple[float, float], dt: float) -> None:
+        if self.stun_timer > 0:
+            return
         d = dist(self.pos, target)
         if d <= 0.0001:
             return
-        step = min(self.speed * dt, d)
+        step = min(self.speed * self.speed_mult * self.slow_mult * dt, d)
         self.pos = (
             self.pos[0] + (target[0] - self.pos[0]) / d * step,
             self.pos[1] + (target[1] - self.pos[1]) / d * step,
@@ -183,10 +203,20 @@ class Unit:
 
         if attacker:
             self.last_hit_by = attacker
+            if (
+                self.kind == "hero"
+                and attacker.owner_player
+                and attacker.owner_player != self.owner_player
+            ):
+                self.damage_contributors.add(attacker.owner_player)
 
         if self.hp <= 0:
             self.hp = 0
             self.alive = False
+
+    def apply_slow(self, mult: float, duration: float) -> None:
+        self.slow_mult = min(self.slow_mult, max(0.1, mult))
+        self.slow_timer = max(self.slow_timer, duration)
 
 
 @dataclass
@@ -228,14 +258,24 @@ class PlayerState:
     hero: Unit
     name: str = ""
     slot: int = 0
+    hero_id: str = ""
     gold: float = 0.0
     cs: int = 0
+    denies: int = 0
     kills: int = 0
     deaths: int = 0
+    assists: int = 0
     level: int = 1
     xp: float = 0.0
     xp_next: float = 100.0
     respawn_timer: float = 0.0
+    str: float = 0.0
+    agi: float = 0.0
+    int: float = 0.0
+    mana: float = 0.0
+    max_mana: float = 0.0
+    items: List[str] = field(default_factory=list)
+    cooldowns: Dict[int, float] = field(default_factory=dict)
 
 
 # ---------- Мир ----------
@@ -247,7 +287,10 @@ class World:
         self.cfg = data["settings"]
         self.map_cfg = data["map"]
         self.units_cfg = data["units"]
-        self.hero_cfg = data["hero"]
+        self.heroes_data = data["heroes"]
+        self.heroes = self.heroes_data["heroes"]
+        self.progression = self.heroes_data.get("progression", {})
+        self.items_data = data["items"]["items"]
         self.colors = {k: tuple(v) for k, v in self.cfg["colors"].items()}
 
         self.grid_w = self.cfg["grid"]["width"]
@@ -278,16 +321,21 @@ class World:
         self.respawn_time = self.cfg["timing"].get("respawn_time", 5.0)
         self.xp_radius = float(self.cfg["timing"].get("xp_radius", 8.0))
 
-        progression = self.hero_cfg.get("progression", {})
+        progression = self.progression
         self.max_level = int(progression.get("max_level", 10))
         self.xp_base = float(progression.get("xp_base", 100))
         self.xp_step = float(progression.get("xp_step", 50))
-        self.hp_growth = float(progression.get("hp_per_level", 20))
-        self.dmg_growth = float(progression.get("damage_per_level", 3))
-        self.armor_growth = float(progression.get("armor_per_level", 0.5))
         self.respawn_per_level = float(progression.get("respawn_per_level", 1.0))
         self.hero_kill_gold_base = float(progression.get("hero_kill_gold_base", 150))
         self.hero_kill_gold_per_level = float(progression.get("hero_kill_gold_per_level", 25))
+        self.hp_per_str = float(progression.get("hp_per_str", 12))
+        self.mana_per_int = float(progression.get("mana_per_int", 8))
+        self.armor_per_agi = float(progression.get("armor_per_agi", 0.15))
+        self.damage_per_primary = float(progression.get("damage_per_primary", 0.8))
+        self.attack_speed_per_agi = float(progression.get("attack_speed_per_agi", 0.006))
+        self.starting_gold = float(progression.get("starting_gold", 600))
+        self.mana_regen = float(progression.get("mana_regen", 3.0))
+        self.shop_radius = float(self.cfg["timing"].get("shop_radius", 6.0))
 
         for t in self.map_cfg["towers"]:
             self._add_unit(self._make_tower(t["team"], t["pos"], self.units_cfg["tower"]))
@@ -332,6 +380,7 @@ class World:
             projectile_speed=tpl["projectile_speed"],
             gold_bounty=tpl.get("gold_bounty", 0),
             xp_bounty=tpl.get("xp_bounty", 0),
+            armor=tpl.get("armor", 0.0),
             proj_color=(255, 120, 50) if team == "B" else (255, 160, 80),
         )
 
@@ -394,41 +443,105 @@ class World:
         return (base[0] + 0.8 * slot, base[1])
 
     # ----- игроки -----
-    def add_player(self, player_id: str, team: str, name: str = "") -> Unit:
+    def _item_bonus(self, player: "PlayerState") -> Dict[str, float]:
+        totals = {"hp": 0.0, "mana": 0.0, "damage": 0.0, "armor": 0.0, "speed": 0.0}
+        for item_id in player.items:
+            item = self.items_data.get(item_id)
+            if not item:
+                continue
+            for key, value in item.get("bonus", {}).items():
+                if key in totals:
+                    totals[key] += float(value)
+        return totals
+
+    def _recompute_hero(self, player: "PlayerState", heal: bool = False) -> None:
+        cfg = self.heroes[player.hero_id]
+        base = cfg["base"]
+        growth = cfg.get("growth", {})
+        level = player.level
+
+        player.str = base["str"] + growth.get("str", 0) * (level - 1)
+        player.agi = base["agi"] + growth.get("agi", 0) * (level - 1)
+        player.int = base["int"] + growth.get("int", 0) * (level - 1)
+
+        bonus = self._item_bonus(player)
+        hero = player.hero
+        old_max_hp = hero.max_hp
+        old_max_mana = player.max_mana
+
+        primary_value = {
+            "str": player.str,
+            "agi": player.agi,
+            "int": player.int,
+        }.get(cfg.get("primary", "str"), player.str)
+
+        hero.max_hp = base["hp"] + player.str * self.hp_per_str + bonus["hp"]
+        hero.atk_dmg = base["damage"] + primary_value * self.damage_per_primary + bonus["damage"]
+        hero.armor = base["armor"] + player.agi * self.armor_per_agi + bonus["armor"]
+        hero.speed = base["speed"] + bonus["speed"]
+        hero.atk_cd = base["atk_cd"] / (1.0 + player.agi * self.attack_speed_per_agi)
+        hero.atk_range = base["atk_range"]
+        hero.radius = base["radius"]
+        hero.projectile_speed = base["projectile_speed"]
+
+        player.max_mana = base["mana"] + player.int * self.mana_per_int + bonus["mana"]
+
+        if heal:
+            hero.hp = min(hero.max_hp, hero.hp + max(0.0, hero.max_hp - old_max_hp))
+            player.mana = min(
+                player.max_mana,
+                player.mana + max(0.0, player.max_mana - old_max_mana),
+            )
+        else:
+            hero.hp = min(hero.hp, hero.max_hp)
+            player.mana = min(player.mana, player.max_mana)
+
+    def add_player(self, player_id: str, team: str, name: str = "",
+                   hero_id: Optional[str] = None) -> Unit:
         if player_id in self.players:
             return self.players[player_id].hero
 
+        if hero_id not in self.heroes:
+            hero_id = next(iter(self.heroes))
+
+        cfg = self.heroes[hero_id]
+        base = cfg["base"]
         slot = sum(1 for p in self.players.values() if p.team == team)
         spawn = self._spawn_pos(team, slot)
-        s = self.hero_cfg["stats"]
 
         hero = Unit(
             uid=0,
             team=team,
             kind="hero",
             pos=spawn,
-            hp=s["hp"],
-            max_hp=s["hp"],
-            speed=s["speed"],
-            atk_range=s["atk_range"],
-            atk_dmg=s["atk_dmg"],
-            atk_cd=s["atk_cd"],
-            radius=s["radius"],
-            projectile_speed=s["projectile_speed"],
-            armor=s.get("armor", 0),
-            proj_color=self.colors.get("projectile", (255, 240, 150)),
+            hp=base["hp"],
+            max_hp=base["hp"],
+            speed=base["speed"],
+            atk_range=base["atk_range"],
+            atk_dmg=base["damage"],
+            atk_cd=base["atk_cd"],
+            radius=base["radius"],
+            projectile_speed=base["projectile_speed"],
+            armor=base["armor"],
+            proj_color=tuple(cfg.get("color", self.colors.get("hero", (240, 220, 120)))),
             owner_player=player_id,
         )
         self._add_unit(hero)
 
-        self.players[player_id] = PlayerState(
+        player = PlayerState(
             player_id=player_id,
             team=team,
             hero=hero,
             name=name,
             slot=slot,
+            hero_id=hero_id,
+            gold=self.starting_gold,
             xp_next=self._xp_for_level(1),
         )
+        self.players[player_id] = player
+        self._recompute_hero(player, heal=True)
+        hero.hp = hero.max_hp
+        player.mana = player.max_mana
         return hero
 
     def remove_player(self, player_id: str) -> None:
@@ -473,6 +586,169 @@ class World:
             hero.move_target = None
             hero.attack_target = None
 
+        elif ctype == "deny":
+            try:
+                target = self.get_unit(int(cmd.get("target", -1)))
+            except (TypeError, ValueError):
+                return
+            if (
+                target
+                and target.alive
+                and target.team == hero.team
+                and target.kind in ("creep", "creep_ranged")
+                and target.hp <= 0.4 * target.max_hp
+            ):
+                hero.attack_target = target
+                hero.move_target = None
+
+        elif ctype == "buy":
+            self._buy_item(player, str(cmd.get("item", "")))
+
+        elif ctype == "cast":
+            self._cast_ability(player, cmd)
+
+    def _shop_error(self, player: "PlayerState", message: str) -> None:
+        self.events.append({
+            "kind": "shop_error",
+            "player": player.player_id,
+            "message": message,
+        })
+
+    def _buy_item(self, player: "PlayerState", item_id: str) -> None:
+        item = self.items_data.get(item_id)
+        if not item:
+            return
+        if item.get("unique") and item_id in player.items:
+            self._shop_error(player, "Этот предмет уже куплен")
+            return
+
+        cost = int(item.get("cost", 0))
+        if player.gold < cost:
+            self._shop_error(player, "Недостаточно золота")
+            return
+
+        base = self.bases.get(player.team)
+        if base and dist(player.hero.pos, base) > self.shop_radius:
+            self._shop_error(player, "Нужно быть у своей базы")
+            return
+
+        player.gold -= cost
+        player.items.append(item_id)
+        self._recompute_hero(player, heal=True)
+        self.events.append({
+            "kind": "purchase",
+            "player": player.player_id,
+            "item": item_id,
+            "gold": int(player.gold),
+        })
+
+    def _aoe_damage(self, caster: Unit, x: float, y: float, radius: float,
+                    damage: float, slow: Optional[float] = None,
+                    slow_duration: float = 0.0) -> None:
+        for unit in self.units:
+            if not unit.alive or unit.team == caster.team:
+                continue
+            if dist(unit.pos, (x, y)) <= radius:
+                unit.take_damage(damage, attacker=caster)
+                if slow:
+                    unit.apply_slow(slow, slow_duration)
+
+    def _cast_ability(self, player: "PlayerState", cmd: dict) -> None:
+        hero = player.hero
+        abilities = self.heroes[player.hero_id].get("abilities", [])
+        try:
+            slot = int(cmd.get("slot", -1))
+        except (TypeError, ValueError):
+            return
+        if slot < 0 or slot >= len(abilities):
+            return
+
+        ability = abilities[slot]
+        if player.cooldowns.get(slot, 0.0) > 0:
+            return
+        cost = float(ability.get("mana", 0))
+        if player.mana < cost:
+            return
+
+        atype = ability.get("type")
+        x, y = hero.pos
+        used = False
+
+        if atype == "target_damage":
+            try:
+                target = self.get_unit(int(cmd.get("target", -1)))
+            except (TypeError, ValueError):
+                return
+            if not target or not target.alive or target.team == hero.team:
+                return
+            if dist(hero.pos, target.pos) > float(ability.get("range", 5.0)) + 0.01:
+                return
+            target.take_damage(float(ability.get("damage", 0)), attacker=hero)
+            if ability.get("slow"):
+                target.apply_slow(
+                    float(ability["slow"]),
+                    float(ability.get("slow_duration", 2.0)),
+                )
+            x, y = target.pos
+            used = True
+
+        elif atype == "aoe_damage":
+            try:
+                x = float(cmd.get("x", hero.pos[0]))
+                y = float(cmd.get("y", hero.pos[1]))
+            except (TypeError, ValueError):
+                return
+            if dist(hero.pos, (x, y)) > float(ability.get("range", 5.0)) + 0.01:
+                return
+            self._aoe_damage(
+                hero, x, y,
+                float(ability.get("radius", 2.0)),
+                float(ability.get("damage", 0)),
+                ability.get("slow"),
+                float(ability.get("slow_duration", 0.0)),
+            )
+            used = True
+
+        elif atype == "aoe_self":
+            x, y = hero.pos
+            self._aoe_damage(
+                hero, x, y,
+                float(ability.get("radius", 2.0)),
+                float(ability.get("damage", 0)),
+                ability.get("slow"),
+                float(ability.get("slow_duration", 0.0)),
+            )
+            used = True
+
+        elif atype == "self_heal":
+            hero.hp = min(hero.max_hp, hero.hp + float(ability.get("amount", 0)))
+            x, y = hero.pos
+            used = True
+
+        elif atype == "speed_buff":
+            hero.speed_mult = float(ability.get("multiplier", 1.5))
+            hero.speed_buff_timer = float(ability.get("duration", 4.0))
+            x, y = hero.pos
+            used = True
+
+        if not used:
+            return
+
+        player.mana -= cost
+        player.cooldowns[slot] = float(ability.get("cooldown", 5.0))
+        self.events.append({
+            "kind": "ability",
+            "player": player.player_id,
+            "slot": slot,
+            "ability_id": ability.get("id"),
+            "name": ability.get("name"),
+            "type": atype,
+            "x": x,
+            "y": y,
+            "radius": float(ability.get("radius", 0.0)),
+            "color": list(ability.get("color", [255, 255, 255])),
+        })
+
     # ----- тик -----
     def tick(self, dt: float) -> None:
         if self.match_over:
@@ -482,9 +758,12 @@ class World:
         self.match_time += dt
         self.tick_count += 1
 
-        # Пассивное золото.
+        # Пассивное золото, регенерация маны и кулдауны.
         for player in self.players.values():
             player.gold += dt
+            player.mana = min(player.max_mana, player.mana + self.mana_regen * dt)
+            for slot in list(player.cooldowns):
+                player.cooldowns[slot] = max(0.0, player.cooldowns[slot] - dt)
 
         # Волны крипов.
         self.creep_timer += dt
@@ -578,6 +857,13 @@ class World:
                     "y": unit.pos[1],
                 })
 
+        # Помощники: все вражеские герои, которые успели нанести урон.
+        killer_pid = killer.owner_player if killer else None
+        for pid in list(unit.damage_contributors):
+            if pid in self.players and pid != unit.owner_player and pid != killer_pid:
+                self.players[pid].assists += 1
+        unit.damage_contributors.clear()
+
         # Опыт за убийство героя получают все вражеские герои рядом.
         hero_xp = 100 + player.level * 20
         for other in self.players.values():
@@ -609,24 +895,39 @@ class World:
 
     def _on_unit_death(self, unit: Unit) -> None:
         killer = unit.last_hit_by
-        if killer and killer.owner_player in self.players and unit.gold_bounty > 0:
-            player = self.players[killer.owner_player]
-            player.gold += unit.gold_bounty
-            player.cs += 1
-            self.events.append({
-                "kind": "bounty",
-                "player": player.player_id,
-                "unit": unit.uid,
-                "amount": unit.gold_bounty,
-                "x": unit.pos[0],
-                "y": unit.pos[1],
-            })
-        unit.gold_bounty = 0
-        self._award_xp(unit)
+        denied = False
 
-    def _award_xp(self, unit: Unit) -> None:
+        if killer and killer.owner_player in self.players:
+            player = self.players[killer.owner_player]
+            if player.team == unit.team:
+                # Добивание своего крипа (deny).
+                denied = True
+                player.denies += 1
+                self.events.append({
+                    "kind": "deny",
+                    "player": player.player_id,
+                    "unit": unit.uid,
+                    "x": unit.pos[0],
+                    "y": unit.pos[1],
+                })
+            elif unit.gold_bounty > 0:
+                player.gold += unit.gold_bounty
+                player.cs += 1
+                self.events.append({
+                    "kind": "bounty",
+                    "player": player.player_id,
+                    "unit": unit.uid,
+                    "amount": unit.gold_bounty,
+                    "x": unit.pos[0],
+                    "y": unit.pos[1],
+                })
+
+        unit.gold_bounty = 0
+        self._award_xp(unit, 0.5 if denied else 1.0)
+
+    def _award_xp(self, unit: Unit, multiplier: float = 1.0) -> None:
         """Опыт за смерть юнита получают все вражеские герои рядом."""
-        xp = unit.xp_bounty
+        xp = int(unit.xp_bounty * multiplier)
         if xp <= 0:
             return
 
@@ -651,12 +952,7 @@ class World:
             player.xp -= player.xp_next
             player.level += 1
             player.xp_next = self._xp_for_level(player.level)
-
-            hero = player.hero
-            hero.max_hp += self.hp_growth
-            hero.hp += self.hp_growth
-            hero.atk_dmg += self.dmg_growth
-            hero.armor += self.armor_growth
+            self._recompute_hero(player, heal=True)
 
             self.events.append({
                 "kind": "level_up",
@@ -685,6 +981,13 @@ class World:
             hero.last_hit_by = None
             hero.atk_timer = 0.0
             hero.death_processed = False
+            hero.speed_mult = 1.0
+            hero.speed_buff_timer = 0.0
+            hero.slow_mult = 1.0
+            hero.slow_timer = 0.0
+            hero.stun_timer = 0.0
+            hero.damage_contributors.clear()
+            player.mana = player.max_mana
 
             self.events.append({
                 "kind": "respawn",
@@ -714,6 +1017,8 @@ class World:
                     "dmg": round(u.atk_dmg, 1),
                     "speed": u.speed,
                     "armor": u.armor,
+                    "slow": u.slow_mult < 0.999,
+                    "stunned": u.stun_timer > 0,
                 })
             units.append(entry)
 
@@ -732,13 +1037,25 @@ class World:
             pid: {
                 "team": p.team,
                 "name": p.name,
+                "hero_id": p.hero_id,
                 "gold": int(p.gold),
                 "cs": p.cs,
+                "denies": p.denies,
                 "kills": p.kills,
                 "deaths": p.deaths,
+                "assists": p.assists,
                 "level": p.level,
                 "xp": round(p.xp, 1),
                 "xp_next": round(p.xp_next, 1),
+                "str": round(p.str, 1),
+                "agi": round(p.agi, 1),
+                "int": round(p.int, 1),
+                "mana": round(p.mana, 1),
+                "max_mana": round(p.max_mana, 1),
+                "items": list(p.items),
+                "cooldowns": {
+                    str(slot): round(cd, 2) for slot, cd in p.cooldowns.items()
+                },
                 "respawn": round(p.respawn_timer, 2),
                 "hero": p.hero.uid if p.hero else None,
             }

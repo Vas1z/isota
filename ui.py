@@ -33,6 +33,7 @@ class UI:
         self.cs_font = pygame.font.SysFont("consolas", 18, bold=True)
         self.popup_font = pygame.font.SysFont("consolas", 16, bold=True)
         self.stat_font = pygame.font.SysFont("consolas", 12)
+        self.mid_font = pygame.font.SysFont("consolas", 13)
         self.fps_font = pygame.font.SysFont("consolas", 14, bold=True)
 
         mm = self.cfg["minimap"]
@@ -49,6 +50,16 @@ class UI:
             "tower_b": tuple(mm["tower_b"]),
             "lane": tuple(mm["lane"]),
         }
+        self.shop_rects = {}
+
+    def _fit_text(self, text, font, max_width: int) -> str:
+        text = str(text)
+        if font.size(text)[0] <= max_width:
+            return text
+        suffix = "…"
+        while text and font.size(text + suffix)[0] > max_width:
+            text = text[:-1]
+        return text + suffix
 
     def world_to_minimap(self, gx: float, gy: float) -> Tuple[float, float]:
         px = gx / self.game.Grid.grid_w * self.mm_size
@@ -62,6 +73,14 @@ class UI:
 
         pygame.draw.rect(surface, self.mm_bg, (mx, my, self.mm_size, self.mm_size))
         pygame.draw.rect(surface, self.mm_border, (mx, my, self.mm_size, self.mm_size), 2)
+
+        # Река на миникарте (та же диагональ, что и в мире).
+        rx1, ry1 = self.world_to_minimap(0, 0)
+        rx2, ry2 = self.world_to_minimap(self.game.Grid.grid_w, self.game.Grid.grid_h)
+        pygame.draw.line(
+            surface, self.colors.get("river", (28, 86, 132)),
+            (mx + rx1, my + ry1), (mx + rx2, my + ry2), 6,
+        )
 
         for path in self.game.lanes.values():
             pts = []
@@ -138,7 +157,9 @@ class UI:
         cy = 8
         pygame.draw.rect(surface, (10, 14, 20), (cx, cy, cs_rect_w, cs_rect_h))
         pygame.draw.rect(surface, (80, 90, 110), (cx, cy, cs_rect_w, cs_rect_h), 2)
-        cs_text = self.cs_font.render(f"Крипы: {self.game.cs}", True, (220, 220, 220))
+        cs_text = self.cs_font.render(
+            f"CS {self.game.cs} / D {self.game.denies}", True, (220, 220, 220)
+        )
         surface.blit(cs_text, (cx + 10, cy + 8))
 
         # Таймер (сверху по центру)
@@ -188,6 +209,7 @@ class UI:
             status_surf = self.font.render(status, True, (225, 225, 225))
             surface.blit(status_surf, (16, 42))
 
+        self.draw_ability_bar(surface)
         self.draw_hero_panel(surface)
 
         # FPS (слева снизу)
@@ -208,10 +230,58 @@ class UI:
 
             surface.blit(fps_text, text_rect)
 
+    def draw_ability_bar(self, surface):
+        game = self.game
+        if not game.abilities or game.hero is None:
+            return
+
+        sw, sh = surface.get_size()
+        abilities = game.abilities[:3]
+        slot = 54
+        gap = 10
+        total = len(abilities) * slot + (len(abilities) - 1) * gap
+        x = sw // 2 - total // 2
+        y = sh - 112 - 10 - 66
+
+        for i, ability in enumerate(abilities):
+            rect = pygame.Rect(x + i * (slot + gap), y, slot, slot)
+            color = tuple(ability.get("color", (180, 190, 200)))
+            cost = float(ability.get("mana", 0))
+            affordable = game.mana >= cost
+            fill = (22, 34, 48) if affordable else (46, 28, 30)
+            pygame.draw.rect(surface, fill, rect, border_radius=8)
+            border = (255, 215, 110) if game.pending_ability == i else (90, 115, 150)
+            pygame.draw.rect(surface, border, rect, 2, border_radius=8)
+            pygame.draw.circle(surface, color, rect.center, 15)
+            pygame.draw.circle(surface, (15, 20, 28), rect.center, 15, 2)
+
+            key = ability.get("key", "?")
+            key_surf = self.stat_font.render(key, True, (255, 255, 255))
+            surface.blit(key_surf, (rect.x + 5, rect.y + 3))
+
+            cooldown = game.cooldowns.get(i, 0.0)
+            if cooldown > 0:
+                overlay = pygame.Surface((slot, slot), pygame.SRCALPHA)
+                overlay.fill((5, 8, 12, 170))
+                surface.blit(overlay, rect.topleft)
+                cd_surf = self.big_font.render(f"{cooldown:.0f}", True, (255, 240, 180))
+                surface.blit(cd_surf, (
+                    rect.centerx - cd_surf.get_width() // 2,
+                    rect.centery - cd_surf.get_height() // 2,
+                ))
+
+            cost_surf = self.small_font.render(str(int(cost)), True, (150, 200, 255) if affordable else (255, 120, 120))
+            surface.blit(cost_surf, (rect.right - cost_surf.get_width() - 4, rect.bottom - 13))
+
+        hint = self.small_font.render(
+            "Q W E — способности    B — магазин", True, (150, 165, 185)
+        )
+        surface.blit(hint, (sw // 2 - hint.get_width() // 2, y - 14))
+
     def draw_hero_panel(self, surface):
         sw, sh = surface.get_size()
-        panel_w = 420
-        panel_h = 80
+        panel_w = 620
+        panel_h = 112
         px = sw // 2 - panel_w // 2
         py = sh - panel_h - 10
 
@@ -222,37 +292,54 @@ class UI:
         if hero is None:
             return
 
-        icon_rect = (px + 10, py + 15, 50, 50)
-        pygame.draw.rect(surface, self.colors["hero"], icon_rect, border_radius=4)
-        pygame.draw.rect(surface, (0, 0, 0), icon_rect, 2, border_radius=4)
+        hero_cfg = self.game.heroes.get(self.game.hero_id, {})
+        hero_color = tuple(hero_cfg.get("color", self.colors["hero"]))
+        if not getattr(hero, "alive", True):
+            hero_color = (95, 95, 95)
 
-        # Бейдж уровня на иконке героя.
+        icon_rect = pygame.Rect(px + 12, py + 14, 60, 60)
+        pygame.draw.rect(surface, hero_color, icon_rect, border_radius=6)
+        pygame.draw.rect(surface, (0, 0, 0), icon_rect, 2, border_radius=6)
+        initial = str(hero_cfg.get("name", "?"))[:1].upper()
+        init_surf = self.big_font.render(initial, True, (25, 28, 34))
+        surface.blit(init_surf, (
+            icon_rect.centerx - init_surf.get_width() // 2,
+            icon_rect.centery - init_surf.get_height() // 2,
+        ))
+
         level = int(getattr(self.game, "level", 1))
-        badge_center = (px + 57, py + 62)
-        pygame.draw.circle(surface, (15, 20, 28), badge_center, 11)
-        pygame.draw.circle(surface, (255, 215, 0), badge_center, 11, 2)
+        badge_center = (px + 64, py + 68)
+        pygame.draw.circle(surface, (15, 20, 28), badge_center, 12)
+        pygame.draw.circle(surface, (255, 215, 0), badge_center, 12, 2)
         lvl_surf = self.small_font.render(str(level), True, (255, 255, 255))
         surface.blit(lvl_surf, (
             badge_center[0] - lvl_surf.get_width() // 2,
             badge_center[1] - lvl_surf.get_height() // 2,
         ))
 
-        bar_x = px + 75
-        bar_y = py + 15
-        bar_w = 330
-        bar_h = 20
+        bar_x = px + 86
+        bar_y = py + 12
+        bar_w = panel_w - 104
+        bar_h = 18
 
         pygame.draw.rect(surface, (30, 30, 30), (bar_x, bar_y, bar_w, bar_h), border_radius=3)
         hp_frac = max(0.0, min(1.0, hero.hp / max(1.0, hero.max_hp)))
         bar_color = (70, 200, 90) if getattr(hero, "alive", True) else (110, 110, 110)
         pygame.draw.rect(surface, bar_color, (bar_x, bar_y, int(bar_w * hp_frac), bar_h), border_radius=3)
-
         hp_text = f"{int(hero.hp)} / {int(hero.max_hp)}"
         hp_surf = self.stat_font.render(hp_text, True, (255, 255, 255))
-        surface.blit(hp_surf, (bar_x + bar_w // 2 - hp_surf.get_width() // 2, bar_y + 4))
+        surface.blit(hp_surf, (bar_x + bar_w // 2 - hp_surf.get_width() // 2, bar_y + 3))
 
-        # Полоска опыта.
-        xp_y = bar_y + bar_h + 4
+        mana_y = bar_y + bar_h + 2
+        mana_h = 9
+        pygame.draw.rect(surface, (25, 30, 45), (bar_x, mana_y, bar_w, mana_h), border_radius=2)
+        mana_frac = max(0.0, min(1.0, self.game.mana / max(1.0, self.game.max_mana)))
+        pygame.draw.rect(surface, (70, 130, 230), (bar_x, mana_y, int(bar_w * mana_frac), mana_h), border_radius=2)
+        mana_text = f"{int(self.game.mana)} / {int(self.game.max_mana)}"
+        mana_surf = self.small_font.render(mana_text, True, (210, 225, 255))
+        surface.blit(mana_surf, (bar_x + bar_w - mana_surf.get_width() - 4, mana_y - 2))
+
+        xp_y = mana_y + mana_h + 2
         xp_h = 5
         pygame.draw.rect(surface, (30, 30, 30), (bar_x, xp_y, bar_w, xp_h), border_radius=2)
         xp = float(getattr(self.game, "xp", 0.0))
@@ -260,24 +347,108 @@ class UI:
         xp_frac = max(0.0, min(1.0, xp / xp_next))
         if level >= int(getattr(self.game, "max_level", 10)):
             xp_frac = 1.0
-        pygame.draw.rect(
-            surface, (110, 150, 255),
-            (bar_x, xp_y, int(bar_w * xp_frac), xp_h), border_radius=2,
-        )
+        pygame.draw.rect(surface, (150, 120, 255),
+                         (bar_x, xp_y, int(bar_w * xp_frac), xp_h), border_radius=2)
 
-        stats = [
-            ("Урон", str(int(hero.atk_dmg)), (255, 100, 100)),
-            ("Скор.", str(int(hero.speed * 10)), (100, 200, 255)),
-            ("Броня", str(int(hero.armor)), (200, 200, 200)),
+        attrs = [
+            ("СИЛ", int(self.game.str), (255, 150, 110)),
+            ("ЛОВ", int(self.game.agi), (140, 235, 150)),
+            ("ИНТ", int(self.game.int), (130, 190, 255)),
         ]
+        for i, (label, value, color) in enumerate(attrs):
+            x = bar_x + i * 105
+            pygame.draw.circle(surface, color, (x + 5, py + 59), 5)
+            text = self.stat_font.render(f"{label} {value}", True, (215, 220, 232))
+            surface.blit(text, (x + 15, py + 52))
 
-        stat_x = bar_x
-        stat_y = py + 47
+        combat = [
+            ("Урон", f"{hero.atk_dmg:.0f}"),
+            ("Броня", f"{hero.armor:.1f}"),
+            ("Скор.", f"{hero.speed * 10:.0f}"),
+            ("Дальн.", f"{hero.atk_range:.1f}"),
+        ]
+        for i, (label, value) in enumerate(combat):
+            x = bar_x + i * 125
+            text = self.stat_font.render(f"{label} {value}", True, (190, 200, 215))
+            surface.blit(text, (x, py + 67))
 
-        for i, (label, value, color) in enumerate(stats):
-            pygame.draw.circle(surface, color, (stat_x + 8 + i * 110, stat_y + 8), 6)
-            text = self.stat_font.render(f"{label}: {value}", True, (200, 200, 200))
-            surface.blit(text, (stat_x + 20 + i * 110, stat_y))
+        kda = (
+            f"K/D/A {self.game.kills}/{self.game.deaths}/{self.game.assists}   "
+            f"CS {self.game.cs}   Deny {self.game.denies}"
+        )
+        kda_surf = self.mid_font.render(kda, True, (225, 230, 240))
+        surface.blit(kda_surf, (bar_x, py + 82))
+
+        owned = ", ".join(
+            self.game.items_data.get(item_id, {}).get("name", item_id)
+            for item_id in self.game.items
+        )
+        if owned:
+            owned_surf = self.small_font.render(self._fit_text(owned, self.small_font, bar_w), True, (190, 210, 235))
+            surface.blit(owned_surf, (bar_x, py + 97))
+
+    def draw_shop(self, surface):
+        game = self.game
+        sw, sh = surface.get_size()
+        overlay = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 140))
+        surface.blit(overlay, (0, 0))
+
+        width, height = 680, 446
+        x = sw // 2 - width // 2
+        y = sh // 2 - height // 2
+        pygame.draw.rect(surface, (12, 18, 27), (x, y, width, height), border_radius=12)
+        pygame.draw.rect(surface, (100, 130, 170), (x, y, width, height), 2, border_radius=12)
+
+        title = self.big_font.render("МАГАЗИН", True, (255, 225, 140))
+        surface.blit(title, (x + 20, y + 14))
+        gold = self.gold_font.render(f"{game.gold}", True, (255, 215, 0))
+        surface.blit(gold, (x + width - gold.get_width() - 22, y + 12))
+
+        self.shop_rects.clear()
+        items = list(game.items_data.items())
+        for i, (item_id, item) in enumerate(items):
+            row = pygame.Rect(x + 16, y + 56 + i * 70, width - 32, 60)
+            self.shop_rects[item_id] = row
+            owned = game.items.count(item_id)
+            can_buy = game.gold >= item.get("cost", 0) and not (item.get("unique") and owned)
+            pygame.draw.rect(surface, (20, 30, 43) if can_buy else (28, 24, 28), row, border_radius=6)
+            pygame.draw.rect(surface, (60, 85, 115), row, 1, border_radius=6)
+
+            icon_rect = pygame.Rect(row.x + 8, row.y + 8, 44, 44)
+            icon = game.item_icons.get(item_id)
+            if icon is not None:
+                scaled = pygame.transform.smoothscale(icon, (40, 40))
+                surface.blit(scaled, scaled.get_rect(center=icon_rect.center))
+            else:
+                pygame.draw.rect(surface, (80, 100, 130), icon_rect, border_radius=6)
+
+            name = self.mid_font.render(item.get("name", item_id), True, (235, 240, 248))
+            surface.blit(name, (row.x + 62, row.y + 7))
+            desc = self.small_font.render(item.get("desc", ""), True, (165, 180, 200))
+            surface.blit(desc, (row.x + 62, row.y + 26))
+
+            count = f" x{owned}" if owned else ""
+            price_color = (255, 215, 0) if can_buy else (220, 110, 110)
+            price = self.mid_font.render(f"{item.get('cost', 0)}{count}", True, price_color)
+            surface.blit(price, (row.right - price.get_width() - 12, row.y + 7))
+            if item.get("unique") and owned:
+                sold = self.small_font.render("куплено", True, (140, 210, 150))
+                surface.blit(sold, (row.right - sold.get_width() - 12, row.y + 32))
+
+        hint = self.small_font.render(
+            "ЛКМ — купить    B или ПКМ — закрыть", True, (150, 165, 185)
+        )
+        surface.blit(hint, (x + 20, y + height - 26))
+        if game.shop_message:
+            msg = self.mid_font.render(game.shop_message, True, (255, 210, 140))
+            surface.blit(msg, (x + 250, y + height - 28))
+
+    def shop_hit(self, pos):
+        for item_id, rect in self.shop_rects.items():
+            if rect.collidepoint(pos):
+                return item_id
+        return None
 
     def draw_match_end(self, surface):
         sw, sh = surface.get_size()

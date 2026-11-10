@@ -16,6 +16,9 @@
 """
 
 import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pygame
 
@@ -61,6 +64,7 @@ class Console:
             "clear": self._cmd_clear,
             "echo": self._cmd_echo,
             "history": self._cmd_history,
+            "agents": self._cmd_agents,
             "quit": self._cmd_quit,
             "exit": self._cmd_quit,
         }
@@ -86,6 +90,7 @@ class Console:
             "clear": "очистить консоль",
             "echo <text>": "вывести текст",
             "history": "история команд",
+            "agents": "живой лог агентов в отдельном окне терминала",
             "quit": "выйти из игры",
         }
 
@@ -397,6 +402,23 @@ class Console:
             return
         for i, line in enumerate(self.history, 1):
             self.log(f"{i:>3}  {line}")
+
+    def _cmd_agents(self, args) -> None:
+        root = Path(__file__).parent
+        viewer = root / "agents_console.py"
+        if not viewer.exists():
+            self.log("agents_console.py не найден", (255, 120, 120))
+            return
+        try:
+            flags = subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0
+            subprocess.Popen(
+                [sys.executable, str(viewer)],
+                cwd=str(root),
+                creationflags=flags,
+            )
+            self.log("лог агентов открыт в отдельном окне", (150, 220, 150))
+        except OSError as exc:
+            self.log(f"не удалось открыть лог агентов: {exc}", (255, 120, 120))
 
     def _cmd_quit(self, args) -> None:
         self.log("bye", (150, 220, 150))

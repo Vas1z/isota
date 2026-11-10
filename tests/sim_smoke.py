@@ -57,28 +57,31 @@ def main() -> int:
     assert world2.players["p1"].xp == 20, "XP was not awarded to nearby hero"
     assert any(e["kind"] == "bounty" for e in world2.events)
 
-    # 3. Уровень: рост статов.
+    # 3. Уровень: растут атрибуты и производные статы.
     player = world2.players["p1"]
     hp_before = hero2.max_hp
     dmg_before = hero2.atk_dmg
     armor_before = hero2.armor
+    str_before = player.str
     world2._add_xp(player, 100)  # 20 уже есть, нужно 100 до 2 уровня
     assert player.level == 2, "hero did not level up"
-    assert hero2.max_hp == hp_before + 20, "HP growth is broken"
-    assert hero2.atk_dmg == dmg_before + 3, "damage growth is broken"
-    assert hero2.armor == armor_before + 0.5, "armor growth is broken"
+    assert player.str > str_before, "strength did not grow"
+    assert hero2.max_hp > hp_before, "HP growth is broken"
+    assert hero2.atk_dmg > dmg_before, "damage growth is broken"
+    assert hero2.armor > armor_before, "armor growth is broken"
     assert any(e["kind"] == "level_up" for e in world2.events)
 
     # 4. Смерть героя и респавн.
     world3 = World(data)
     hero3 = world3.add_player("p1", "A")
     enemy = world3.add_player("p2", "B")
+    gold_before = world3.players["p2"].gold
     hero3.take_damage(99999, attacker=enemy)
     world3.tick(1 / 30)
     assert not hero3.alive
     assert world3.players["p1"].deaths == 1
     assert world3.players["p2"].kills == 1
-    assert int(world3.players["p2"].gold) >= 175, "hero kill gold was not awarded"
+    assert world3.players["p2"].gold >= gold_before + 175, "hero kill gold was not awarded"
     assert world3.players["p1"].respawn_timer > 0
 
     for _ in range(30 * 6):
@@ -129,6 +132,53 @@ def main() -> int:
     world6._add_unit(creep2)
     target = tower._find_target(world6.units)
     assert target is creep2, f"tower targeted {getattr(target, 'kind', None)} instead of creep"
+
+    # 7b. Deny: свой крип ниже 40% HP, без золота/CS и с половиной опыта врагу.
+    world8 = World(data)
+    world8.add_player("p1", "A")
+    world8.add_player("p2", "B")
+    world8.players["p2"].hero.pos = (6.0, 20.0)
+    creep3 = world8._make_creep("A", [(5, 20), (5, 20)], data["units"]["creep"])
+    creep3.pos = (5.0, 20.0)
+    creep3.hp = 10.0
+    world8._add_unit(creep3)
+    world8.apply_command("p1", {"type": "deny", "target": creep3.uid})
+    for _ in range(120):
+        world8.tick(1 / 60)
+        if not creep3.alive:
+            break
+    assert not creep3.alive, "deny did not kill the creep"
+    assert world8.players["p1"].denies == 1, "deny was not counted"
+    assert world8.players["p1"].cs == 0, "deny gave CS"
+    assert world8.players["p2"].xp == 10, "deny XP was not halved"
+    assert any(e["kind"] == "deny" for e in world8.events)
+
+    # 7c. Магазин: ботинки дают скорость, повторная покупка unique отклоняется.
+    world9 = World(data)
+    hero9 = world9.add_player("p1", "A")
+    player9 = world9.players["p1"]
+    speed_before = hero9.speed
+    world9.apply_command("p1", {"type": "buy", "item": "boots"})
+    assert "boots" in player9.items
+    assert hero9.speed > speed_before, "boots did not increase speed"
+    world9.apply_command("p1", {"type": "buy", "item": "boots"})
+    assert player9.items.count("boots") == 1
+    assert any(e["kind"] == "shop_error" for e in world9.events)
+
+    # 7d. Способность: урон, мана и кулдаун.
+    world10 = World(data)
+    world10.add_player("p1", "A")
+    world10.add_player("p2", "B")
+    enemy10 = world10.players["p2"].hero
+    enemy10.pos = (6.0, 20.0)
+    caster = world10.players["p1"]
+    mana_before = caster.mana
+    hp_before = enemy10.hp
+    world10.apply_command("p1", {"type": "cast", "slot": 0, "target": enemy10.uid})
+    assert caster.mana < mana_before, "ability did not spend mana"
+    assert caster.cooldowns.get(0, 0) > 0, "ability cooldown was not set"
+    assert enemy10.hp < hp_before, "ability did not deal damage"
+    assert any(e["kind"] == "ability" for e in world10.events)
 
     # 8. Уничтожение трона завершает матч и замораживает симуляцию.
     world7 = World(data)

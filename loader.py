@@ -17,16 +17,35 @@ def load_all() -> dict:
         "settings": load("settings"),
         "controls": load("controls"),
         "hero":     load("hero"),
+        "heroes":   load("heroes"),
+        "items":    load("items"),
         "units":    load("units"),
         "map":      load("map"),
     }
 
 
 def validate(data: dict) -> None:
-    required = ["settings", "controls", "hero", "units", "map"]
+    required = ["settings", "controls", "hero", "units", "map", "heroes", "items"]
     for key in required:
         assert key in data, f"Missing config: {key}"
     assert data["hero"]["team"] in ("A", "B"), "hero.team must be A or B"
+
+    heroes = data["heroes"]["heroes"]
+    assert heroes, "heroes.json has no heroes"
+    for hero_id, hero in heroes.items():
+        assert "base" in hero and "abilities" in hero, f"hero {hero_id}: base/abilities missing"
+        assert hero.get("primary") in ("str", "agi", "int"), f"hero {hero_id}: bad primary"
+        for key in ("hp", "mana", "damage", "armor", "speed", "atk_range", "atk_cd", "radius",
+                    "projectile_speed", "str", "agi", "int"):
+            assert key in hero["base"], f"hero {hero_id}: base.{key} missing"
+        for ability in hero["abilities"]:
+            assert "type" in ability and "name" in ability, f"hero {hero_id}: bad ability"
+
+    items = data["items"]["items"]
+    assert items, "items.json has no items"
+    for item_id, item in items.items():
+        assert "cost" in item and "bonus" in item, f"item {item_id}: cost/bonus missing"
+
     lanes = data["map"]["lanes"]
     assert lanes, "map.lanes empty"
     for lane, path in lanes.items():

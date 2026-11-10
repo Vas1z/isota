@@ -22,15 +22,16 @@
     "xp_bounty": 25
   },
   "tower": {
-    "hp": 400,
+    "hp": 900,
     "speed": 0,
-    "atk_range": 3.0,
-    "atk_dmg": 25,
-    "atk_cd": 1.2,
+    "atk_range": 3.5,
+    "atk_dmg": 40,
+    "atk_cd": 1.0,
     "radius": 0.5,
     "projectile_speed": 10.0,
     "gold_bounty": 0,
-    "xp_bounty": 100
+    "xp_bounty": 100,
+    "armor": 5
   },
   "throne": {
     "hp": 2500,
