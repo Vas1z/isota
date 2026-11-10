@@ -1,0 +1,9 @@
+{
+  "move_up":    ["w", "up"],
+  "move_down":  ["s", "down"],
+  "move_left":  ["a", "left"],
+  "move_right": ["d", "right"],
+  "attack":     "mouse_right",
+  "stop":       "s",
+  "quit":       "escape"
+}

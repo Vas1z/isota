@@ -1,0 +1,22 @@
+{
+  "creep": {
+    "hp": 60,
+    "speed": 1.2,
+    "atk_range": 1.4,
+    "atk_dmg": 8,
+    "atk_cd": 1.0,
+    "radius": 0.28,
+    "projectile_speed": 8.0,
+    "gold_bounty": 5
+  },
+  "tower": {
+    "hp": 400,
+    "speed": 0,
+    "atk_range": 3.0,
+    "atk_dmg": 25,
+    "atk_cd": 1.2,
+    "radius": 0.5,
+    "projectile_speed": 10.0,
+    "gold_bounty": 0
+  }
+}

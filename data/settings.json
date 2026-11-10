@@ -1,0 +1,60 @@
+{
+  "screen": { "width": 1280, "height": 720, "fps": 60 },
+  "iso": {
+    "tile_w": 64,
+    "tile_h": 32,
+    "origin_x": 640,
+    "origin_y": 100,
+    "zoom": 6
+  },
+  "grid": { "width": 24, "height": 24 },
+  "camera": {
+    "follow_hero": false,
+    "follow_speed": 6.0,
+    "scroll_speed": 600.0
+  },
+  "minimap": {
+    "size": 180,
+    "margin": 12,
+    "bg": [12, 16, 22],
+    "border": [80, 90, 110],
+    "hero": [255, 255, 100],
+    "creep_a": [120, 170, 240],
+    "creep_b": [240, 130, 120],
+    "tower_a": [40, 80, 160],
+    "tower_b": [160, 50, 40],
+    "lane": [110, 96, 60],
+    "camera_rect": [255, 255, 255]
+  },
+  "timing": {
+    "creep_interval": 10.0,
+    "creeps_per_wave": 5,
+    "respawn_time": 5.0
+  },
+  "colors": {
+    "bg":         [18, 24, 32],
+    "grass":      [46, 84, 52],
+    "grass2":     [52, 92, 58],
+    "lane":       [110, 96, 60],
+    "base_a":     [60, 110, 200],
+    "base_b":     [200, 70, 60],
+    "hero":       [240, 220, 120],
+    "creep_a":    [120, 170, 240],
+    "creep_b":    [240, 130, 120],
+    "tower_a":    [40, 80, 160],
+    "tower_b":    [160, 50, 40],
+    "projectile": [255, 240, 150],
+    "hp_bg":      [30, 30, 30],
+    "hp_a":       [70, 200, 90],
+    "hp_b":       [220, 70, 60],
+    "text":       [230, 230, 230]
+  },
+    "debug": {
+    "show_grid": false,
+    "show_hitboxes": true,
+    "grid_color": [255, 255, 255, 80],
+    "text_color": [255, 255, 0],
+    "show_fps": true
+  }
+  
+}

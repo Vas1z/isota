@@ -1,0 +1,15 @@
+{
+  "team": "A",
+  "kind": "hero",
+  "spawn": [4, 20],
+  "stats": {
+    "hp": 200,
+    "speed": 1.0,
+    "atk_range": 4.0,
+    "atk_dmg": 35,
+    "atk_cd": 0.6,
+    "radius": 0.35,
+    "projectile_speed": 8.0,
+    "armor": 5
+  }
+}
