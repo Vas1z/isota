@@ -26,6 +26,7 @@ class Unit:
     max_hp: float
     speed: float = 1.5
     atk_range: float = 1.5
+    melee: bool = False
     atk_dmg: float = 10.0
     atk_cd: float = 1.0
     atk_timer: float = 0.0
@@ -50,9 +51,17 @@ class Unit:
     slow_timer: float = 0.0
     stun_timer: float = 0.0
     damage_contributors: set = field(default_factory=set)
+    prev_pos: Optional[Tuple[float, float]] = None
+    stuck_timer: float = 0.0
+    home_pos: Optional[Tuple[float, float]] = None
+    leash_range: float = 7.0
+    camp_id: Optional[str] = None
+    neutral_type: str = ""
+    respawn_time: float = 60.0
 
     # ----- обновление -----
-    def update(self, dt: float, units: List["Unit"], projectiles: List["Projectile"]) -> None:
+    def update(self, dt: float, units: List["Unit"], projectiles: List["Projectile"],
+               events: Optional[List[dict]] = None) -> None:
         if not self.alive:
             return
 
@@ -75,22 +84,80 @@ class Unit:
             return
 
         if self.kind == "hero":
-            self._update_hero(dt, units, projectiles)
+            self._update_hero(dt, units, projectiles, events)
             return
 
+        if self.kind == "neutral":
+            self._update_neutral(dt, units, projectiles, events)
+            return
+
+        moved_last_tick = 0.0
+        if self.kind in ("creep", "creep_ranged"):
+            if self.prev_pos is None:
+                self.prev_pos = self.pos
+            moved_last_tick = dist(self.pos, self.prev_pos)
+            self.prev_pos = self.pos
+
         self.target = self._find_target(units)
+
         if self.target and dist(self.pos, self.target.pos) <= self.atk_range:
+            self.stuck_timer = 0.0
             if self.atk_timer <= 0:
-                self._fire(projectiles, self.target)
+                self._fire(projectiles, self.target, events)
+        elif (
+            self.kind != "tower"
+            and self.target
+            and self.target.kind in ("tower", "throne")
+            and dist(self.pos, self.target.pos) <= self.atk_range + 0.8
+        ):
+            # Не стоять перед вышкой: подойти на дистанцию удара.
+            self.stuck_timer = 0.0
+            self._move_towards(self.target.pos, dt)
         elif self.kind != "tower" and self.waypoints and self.wp_index < len(self.waypoints):
             wp = self.waypoints[self.wp_index]
             d = dist(self.pos, wp)
             if d < 0.15:
                 self.wp_index += 1
+                self.stuck_timer = 0.0
             else:
                 self._move_towards(wp, dt)
+                if moved_last_tick < 0.008:
+                    self.stuck_timer += dt
+                    if self.stuck_timer >= 0.6 and self.wp_index < len(self.waypoints) - 1:
+                        # Мягкий анти-стак: пропускаем точку, если реально застряли.
+                        self.wp_index += 1
+                        self.stuck_timer = 0.0
+                else:
+                    self.stuck_timer = 0.0
 
-    def _update_hero(self, dt: float, units: List["Unit"], projectiles: List["Projectile"]) -> None:
+    def _update_neutral(self, dt: float, units: List["Unit"],
+                        projectiles: List["Projectile"],
+                        events: Optional[List[dict]] = None) -> None:
+        home = self.home_pos or self.pos
+        target = None
+        if (
+            self.last_hit_by
+            and self.last_hit_by.alive
+            and dist(self.pos, home) <= self.leash_range
+        ):
+            target = self.last_hit_by
+        if target is None:
+            target = self._find_target(units)
+
+        if target and dist(self.pos, home) <= self.leash_range:
+            d = dist(self.pos, target.pos)
+            if d <= self.atk_range:
+                if self.atk_timer <= 0:
+                    self._fire(projectiles, target, events)
+            else:
+                self._move_towards(target.pos, dt)
+            return
+
+        if dist(self.pos, home) > 0.2:
+            self._move_towards(home, dt)
+
+    def _update_hero(self, dt: float, units: List["Unit"], projectiles: List["Projectile"],
+                     events: Optional[List[dict]] = None) -> None:
         if self.attack_target:
             tgt = self.attack_target
             if not tgt.alive:
@@ -100,7 +167,7 @@ class Unit:
                 if d <= self.atk_range:
                     self.move_target = None
                     if self.atk_timer <= 0:
-                        self._fire(projectiles, tgt)
+                        self._fire(projectiles, tgt, events)
                 else:
                     self._move_towards(tgt.pos, dt)
             return
@@ -124,8 +191,25 @@ class Unit:
             self.pos[1] + (target[1] - self.pos[1]) / d * step,
         )
 
-    def _fire(self, projectiles: List["Projectile"], target: "Unit") -> None:
+    def _fire(self, projectiles: List["Projectile"], target: "Unit",
+              events: Optional[List[dict]] = None) -> None:
         self.atk_timer = self.atk_cd
+
+        # Ближний бой: удар мгновенный, без снаряда.
+        if self.melee:
+            target.take_damage(self.atk_dmg, attacker=self)
+            if events is not None:
+                angle = math.atan2(target.pos[1] - self.pos[1], target.pos[0] - self.pos[0])
+                events.append({
+                    "kind": "melee_attack",
+                    "x": target.pos[0],
+                    "y": target.pos[1],
+                    "angle": angle,
+                    "color": list(self.proj_color),
+                    "team": self.team,
+                })
+            return
+
         projectiles.append(Projectile(
             pos=self.pos,
             target=target,
@@ -171,6 +255,15 @@ class Unit:
     # ----- коллизии -----
     def resolve_collision(self, other: "Unit") -> None:
         if self is other or not self.alive or not other.alive:
+            return
+
+        # Крипы не должны упираться в вышки/троны: иначе на линии они
+        # навсегда застревают перед своей же вышкой.
+        creeps = ("creep", "creep_ranged")
+        fixed = ("tower", "throne")
+        if (self.kind in creeps and other.kind in fixed) or (
+            self.kind in fixed and other.kind in creeps
+        ):
             return
 
         d = dist(self.pos, other.pos)
@@ -291,6 +384,7 @@ class World:
         self.heroes = self.heroes_data["heroes"]
         self.progression = self.heroes_data.get("progression", {})
         self.items_data = data["items"]["items"]
+        self.neutrals_data = data["neutrals"]
         self.colors = {k: tuple(v) for k, v in self.cfg["colors"].items()}
 
         self.grid_w = self.cfg["grid"]["width"]
@@ -307,15 +401,16 @@ class World:
         self.projectiles: List[Projectile] = []
         self.players: Dict[str, PlayerState] = {}
         self.events: List[dict] = []
+        self.neutral_respawns: List[dict] = []
 
-        self.match_time = 0.0
+        self.match_time = -30.0
         self.tick_count = 0
         self._next_uid = 1
         self.match_over = False
         self.winner = None
 
-        self.creep_timer = 0.0
         self.creep_interval = self.cfg["timing"]["creep_interval"]
+        self.creep_timer = self.creep_interval
         self.creeps_per_wave = self.cfg["timing"].get("creeps_per_wave", 5)
         self.ranged_creeps = int(self.cfg["timing"].get("ranged_creeps", 1))
         self.respawn_time = self.cfg["timing"].get("respawn_time", 5.0)
@@ -345,6 +440,9 @@ class World:
             thrones = [{"team": team, "pos": pos} for team, pos in self.bases.items()]
         for t in thrones:
             self._add_unit(self._make_throne(t["team"], t["pos"], self.units_cfg["throne"]))
+
+        for camp in self.map_cfg.get("neutrals", []):
+            self._spawn_neutral_camp(camp)
 
     # ----- сущности -----
     def new_uid(self) -> int:
@@ -427,6 +525,7 @@ class World:
             max_hp=tpl["hp"],
             speed=tpl["speed"],
             atk_range=tpl["atk_range"],
+            melee=bool(tpl.get("melee", kind == "creep")),
             atk_dmg=tpl["atk_dmg"],
             atk_cd=tpl["atk_cd"],
             radius=tpl["radius"],
@@ -437,6 +536,72 @@ class World:
             wp_index=1,
             proj_color=(255, 240, 150),
         )
+
+    def _spawn_neutral_camp(self, camp: dict) -> None:
+        tpl_id = str(camp.get("type", ""))
+        if tpl_id not in self.neutrals_data:
+            return
+        count = max(1, int(camp.get("count", 2)))
+        center = tuple(camp.get("pos", (0, 0)))
+        respawn = float(camp.get("respawn", 60))
+        for index in range(count):
+            angle = (2.0 * math.pi * index) / count
+            offset = 0.55 if count > 1 else 0.0
+            pos = (
+                center[0] + math.cos(angle) * offset,
+                center[1] + math.sin(angle) * offset,
+            )
+            self._spawn_neutral_unit(tpl_id, pos, str(camp.get("id", "")), respawn)
+
+    def _spawn_neutral_unit(self, tpl_id: str, pos, camp_id: str,
+                            respawn: float = 60.0) -> None:
+        tpl = self.neutrals_data.get(tpl_id)
+        if not tpl:
+            return
+        unit = Unit(
+            uid=0,
+            team="N",
+            kind="neutral",
+            pos=tuple(pos),
+            hp=tpl["hp"],
+            max_hp=tpl["hp"],
+            speed=tpl["speed"],
+            atk_range=tpl["atk_range"],
+            melee=bool(tpl.get("melee", True)),
+            atk_dmg=tpl["atk_dmg"],
+            atk_cd=tpl["atk_cd"],
+            radius=tpl["radius"],
+            projectile_speed=tpl["projectile_speed"],
+            gold_bounty=tpl.get("gold_bounty", 0),
+            xp_bounty=tpl.get("xp_bounty", 0),
+            armor=tpl.get("armor", 0.0),
+            proj_color=(210, 180, 120),
+            home_pos=tuple(pos),
+            camp_id=camp_id,
+            neutral_type=tpl_id,
+            respawn_time=respawn,
+        )
+        self._add_unit(unit)
+
+    def _queue_neutral_respawn(self, unit: Unit) -> None:
+        if not unit.neutral_type:
+            return
+        self.neutral_respawns.append({
+            "type": unit.neutral_type,
+            "pos": unit.home_pos or unit.pos,
+            "camp_id": unit.camp_id or "",
+            "respawn": unit.respawn_time,
+            "timer": unit.respawn_time,
+        })
+
+    def _update_neutral_respawns(self, dt: float) -> None:
+        for item in list(self.neutral_respawns):
+            item["timer"] -= dt
+            if item["timer"] <= 0:
+                self._spawn_neutral_unit(
+                    item["type"], item["pos"], item["camp_id"], item["respawn"]
+                )
+                self.neutral_respawns.remove(item)
 
     def _spawn_pos(self, team: str, slot: int) -> Tuple[float, float]:
         base = self.spawns.get(team, self.bases.get(team, (2.0, 2.0)))
@@ -518,6 +683,7 @@ class World:
             max_hp=base["hp"],
             speed=base["speed"],
             atk_range=base["atk_range"],
+            melee=bool(cfg.get("melee", False)),
             atk_dmg=base["damage"],
             atk_cd=base["atk_cd"],
             radius=base["radius"],
@@ -620,6 +786,9 @@ class World:
             return
         if item.get("unique") and item_id in player.items:
             self._shop_error(player, "Этот предмет уже куплен")
+            return
+        if len(player.items) >= 6:
+            self._shop_error(player, "Инвентарь полон")
             return
 
         cost = int(item.get("cost", 0))
@@ -758,23 +927,27 @@ class World:
         self.match_time += dt
         self.tick_count += 1
 
-        # Пассивное золото, регенерация маны и кулдауны.
+        # До 0:00 идёт отсчёт, крипы и пассивное золото ещё не работают.
+        in_game = self.match_time >= 0.0
+
         for player in self.players.values():
-            player.gold += dt
+            if in_game:
+                player.gold += dt
             player.mana = min(player.max_mana, player.mana + self.mana_regen * dt)
             for slot in list(player.cooldowns):
                 player.cooldowns[slot] = max(0.0, player.cooldowns[slot] - dt)
 
-        # Волны крипов.
-        self.creep_timer += dt
-        while self.creep_timer >= self.creep_interval:
-            self.creep_timer -= self.creep_interval
-            self._spawn_creep_wave()
+        # Волны крипов: первая на 0:00, дальше каждые 30 секунд.
+        if in_game:
+            self.creep_timer += dt
+            while self.creep_timer >= self.creep_interval:
+                self.creep_timer -= self.creep_interval
+                self._spawn_creep_wave()
 
         # Юниты.
         for unit in list(self.units):
             if unit.alive:
-                unit.update(dt, self.units, self.projectiles)
+                unit.update(dt, self.units, self.projectiles, self.events)
 
         # Проектилям нужен uid для снапшотов.
         for proj in self.projectiles:
@@ -804,11 +977,15 @@ class World:
                 self._on_throne_death(unit)
             elif unit.kind == "hero":
                 self._on_hero_death(unit)
+            elif unit.kind == "neutral":
+                self._on_unit_death(unit)
+                self._queue_neutral_respawn(unit)
             elif unit.gold_bounty > 0 or unit.xp_bounty > 0:
                 self._on_unit_death(unit)
 
-        # Респавн героев.
+        # Респавн героев и нейтралов.
         self._update_respawns(dt)
+        self._update_neutral_respawns(dt)
 
         # Мёртвые герои остаются для респавна, мёртвые троны — как руины.
         self.units = [u for u in self.units if u.alive or u.kind in ("hero", "throne")]
@@ -1010,6 +1187,8 @@ class World:
                 "max_hp": round(u.max_hp, 1),
                 "radius": u.radius,
                 "range": u.atk_range,
+                "melee": u.melee,
+                "neutral_type": u.neutral_type,
                 "alive": u.alive,
             }
             if u.kind == "hero":

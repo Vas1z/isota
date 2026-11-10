@@ -1,0 +1,508 @@
+{
+  "heroes": {
+    "guardian": {
+      "name": "Тарн",
+      "title": "Страж Переправы",
+      "primary": "str",
+      "color": [210, 190, 130],
+      "portrait": "assets/heroes/guardian.png",
+      "melee": true,
+      "base": {
+        "hp": 240,
+        "mana": 90,
+        "damage": 30,
+        "armor": 4,
+        "speed": 1.0,
+        "atk_range": 1.4,
+        "atk_cd": 0.8,
+        "radius": 0.19,
+        "projectile_speed": 8.0,
+        "str": 28,
+        "agi": 12,
+        "int": 16
+      },
+      "growth": {
+        "str": 2.9,
+        "agi": 1.3,
+        "int": 1.6
+      },
+      "abilities": [
+        {
+          "id": "holding_blow",
+          "name": "Держащий удар",
+          "key": "Q",
+          "desc": "Тяжёлый удар щитом: урон и замедление цели.",
+          "type": "target_damage",
+          "range": 3.0,
+          "damage": 65,
+          "slow": 0.5,
+          "slow_duration": 2.5,
+          "mana": 30,
+          "cooldown": 6.0,
+          "color": [230, 210, 150]
+        },
+        {
+          "id": "shield_oath",
+          "name": "Клятва щита",
+          "key": "W",
+          "desc": "Страж восстанавливает часть здоровья.",
+          "type": "self_heal",
+          "amount": 100,
+          "mana": 45,
+          "cooldown": 11.0,
+          "color": [160, 235, 170]
+        },
+        {
+          "id": "earth_rampart",
+          "name": "Земляной вал",
+          "key": "E",
+          "desc": "Поднимает вал земли, нанося урон и замедляя врагов в области.",
+          "type": "aoe_damage",
+          "range": 4.5,
+          "radius": 2.4,
+          "damage": 110,
+          "slow": 0.45,
+          "slow_duration": 2.0,
+          "mana": 70,
+          "cooldown": 16.0,
+          "color": [190, 165, 105]
+        },
+        {
+          "id": "last_bulwark",
+          "name": "Последний рубеж",
+          "key": "R",
+          "desc": "Страж сокрушает землю вокруг себя, нанося большой урон и замедляя всех врагов.",
+          "type": "aoe_self",
+          "radius": 3.6,
+          "damage": 230,
+          "slow": 0.5,
+          "slow_duration": 3.0,
+          "mana": 120,
+          "cooldown": 60.0,
+          "color": [255, 225, 140]
+        }
+      ]
+    },
+    "assassin": {
+      "name": "Кайр",
+      "title": "Ночной клинок",
+      "primary": "agi",
+      "color": [175, 110, 200],
+      "portrait": "assets/heroes/assassin.png",
+      "melee": true,
+      "base": {
+        "hp": 185,
+        "mana": 80,
+        "damage": 36,
+        "armor": 2,
+        "speed": 1.12,
+        "atk_range": 1.35,
+        "atk_cd": 0.65,
+        "radius": 0.17,
+        "projectile_speed": 8.0,
+        "str": 14,
+        "agi": 28,
+        "int": 12
+      },
+      "growth": {
+        "str": 1.5,
+        "agi": 3.0,
+        "int": 1.3
+      },
+      "abilities": [
+        {
+          "id": "tendon_slash",
+          "name": "Разрез сухожилия",
+          "key": "Q",
+          "desc": "Быстрый разрез, замедляющий цель.",
+          "type": "target_damage",
+          "range": 2.8,
+          "damage": 70,
+          "slow": 0.5,
+          "slow_duration": 2.0,
+          "mana": 30,
+          "cooldown": 5.0,
+          "color": [200, 140, 230]
+        },
+        {
+          "id": "smoke_step",
+          "name": "Дымный шаг",
+          "key": "W",
+          "desc": "Растворяется в дыму и резко ускоряется.",
+          "type": "speed_buff",
+          "multiplier": 1.6,
+          "duration": 4.0,
+          "mana": 35,
+          "cooldown": 12.0,
+          "color": [150, 125, 180]
+        },
+        {
+          "id": "double_turn",
+          "name": "Двойной разворот",
+          "key": "E",
+          "desc": "Два молниеносных взмаха по всем врагам вокруг.",
+          "type": "aoe_self",
+          "radius": 2.6,
+          "damage": 120,
+          "mana": 60,
+          "cooldown": 14.0,
+          "color": [225, 130, 245]
+        },
+        {
+          "id": "shadow_verdict",
+          "name": "Казнь из тени",
+          "key": "R",
+          "desc": "Смертельный выпад из невидимости. Наносит огромный урон одной цели и замедляет её.",
+          "type": "target_damage",
+          "range": 3.0,
+          "damage": 280,
+          "slow": 0.4,
+          "slow_duration": 2.0,
+          "mana": 120,
+          "cooldown": 55.0,
+          "color": [255, 90, 210]
+        }
+      ]
+    },
+    "warlock": {
+      "name": "Вельмир",
+      "title": "Тленный Завет",
+      "primary": "int",
+      "color": [130, 190, 110],
+      "portrait": "assets/heroes/warlock.png",
+      "melee": false,
+      "base": {
+        "hp": 185,
+        "mana": 140,
+        "damage": 29,
+        "armor": 2,
+        "speed": 1.0,
+        "atk_range": 3.2,
+        "atk_cd": 0.82,
+        "radius": 0.18,
+        "projectile_speed": 9.0,
+        "str": 17,
+        "agi": 13,
+        "int": 28
+      },
+      "growth": {
+        "str": 1.6,
+        "agi": 1.3,
+        "int": 2.9
+      },
+      "abilities": [
+        {
+          "id": "blight_bolt",
+          "name": "Порча",
+          "key": "Q",
+          "desc": "Сгусток гнили: урон и лёгкое замедление.",
+          "type": "target_damage",
+          "range": 6.0,
+          "damage": 65,
+          "slow": 0.4,
+          "slow_duration": 2.0,
+          "mana": 30,
+          "cooldown": 4.5,
+          "color": [150, 210, 110]
+        },
+        {
+          "id": "sacrifice_circle",
+          "name": "Жертвенный круг",
+          "key": "W",
+          "desc": "Чертит круг, вытягивающий жизнь из врагов.",
+          "type": "aoe_damage",
+          "range": 5.5,
+          "radius": 2.3,
+          "damage": 100,
+          "slow": 0.35,
+          "slow_duration": 2.0,
+          "mana": 65,
+          "cooldown": 13.0,
+          "color": [120, 190, 100]
+        },
+        {
+          "id": "seal_of_weakness",
+          "name": "Печать немощи",
+          "key": "E",
+          "desc": "Печать ослабляет и обжигает врагов в области.",
+          "type": "aoe_damage",
+          "range": 6.5,
+          "radius": 2.8,
+          "damage": 135,
+          "slow": 0.55,
+          "slow_duration": 2.5,
+          "mana": 80,
+          "cooldown": 18.0,
+          "color": [110, 225, 140]
+        },
+        {
+          "id": "yawning_abyss",
+          "name": "Разверстая бездна",
+          "key": "R",
+          "desc": "Разверзает землю под врагами, нанося огромный урон и сильно замедляя их.",
+          "type": "aoe_damage",
+          "range": 7.0,
+          "radius": 3.4,
+          "damage": 250,
+          "slow": 0.5,
+          "slow_duration": 3.0,
+          "mana": 140,
+          "cooldown": 70.0,
+          "color": [90, 255, 120]
+        }
+      ]
+    },
+    "monk": {
+      "name": "Инок Влас",
+      "title": "Странствующий Монах",
+      "primary": "str",
+      "color": [235, 170, 100],
+      "portrait": "assets/heroes/monk.png",
+      "melee": true,
+      "base": {
+        "hp": 215,
+        "mana": 100,
+        "damage": 33,
+        "armor": 3,
+        "speed": 1.06,
+        "atk_range": 1.4,
+        "atk_cd": 0.72,
+        "radius": 0.18,
+        "projectile_speed": 8.0,
+        "str": 24,
+        "agi": 18,
+        "int": 18
+      },
+      "growth": {
+        "str": 2.3,
+        "agi": 1.8,
+        "int": 1.8
+      },
+      "abilities": [
+        {
+          "id": "palm_of_stillness",
+          "name": "Ладонь покоя",
+          "key": "Q",
+          "desc": "Точный удар в болевую точку, замедляющий врага.",
+          "type": "target_damage",
+          "range": 3.2,
+          "damage": 60,
+          "slow": 0.5,
+          "slow_duration": 1.5,
+          "mana": 28,
+          "cooldown": 5.0,
+          "color": [255, 200, 120]
+        },
+        {
+          "id": "mountain_breath",
+          "name": "Дыхание горы",
+          "key": "W",
+          "desc": "Глубокий вдох восстанавливает здоровье.",
+          "type": "self_heal",
+          "amount": 85,
+          "mana": 45,
+          "cooldown": 10.0,
+          "color": [190, 240, 160]
+        },
+        {
+          "id": "circle_of_purity",
+          "name": "Круг чистоты",
+          "key": "E",
+          "desc": "Расходящаяся волна сбивает и замедляет врагов вокруг.",
+          "type": "aoe_self",
+          "radius": 3.0,
+          "damage": 110,
+          "slow": 0.4,
+          "slow_duration": 2.0,
+          "mana": 65,
+          "cooldown": 15.0,
+          "color": [255, 215, 150]
+        },
+        {
+          "id": "hundred_heartbeats",
+          "name": "Сто ударов сердца",
+          "key": "R",
+          "desc": "Входит в транс и обрушивает на врагов вокруг град ударов.",
+          "type": "aoe_self",
+          "radius": 3.4,
+          "damage": 240,
+          "slow": 0.5,
+          "slow_duration": 2.5,
+          "mana": 110,
+          "cooldown": 50.0,
+          "color": [255, 245, 180]
+        }
+      ]
+    },
+    "sniper": {
+      "name": "Ясна",
+      "title": "Дальний Глаз",
+      "primary": "agi",
+      "color": [120, 205, 215],
+      "portrait": "assets/heroes/sniper.png",
+      "melee": false,
+      "base": {
+        "hp": 180,
+        "mana": 90,
+        "damage": 38,
+        "armor": 2,
+        "speed": 1.02,
+        "atk_range": 3.3,
+        "atk_cd": 0.85,
+        "radius": 0.17,
+        "projectile_speed": 12.0,
+        "str": 15,
+        "agi": 27,
+        "int": 15
+      },
+      "growth": {
+        "str": 1.5,
+        "agi": 2.9,
+        "int": 1.4
+      },
+      "abilities": [
+        {
+          "id": "ranging_shot",
+          "name": "Пристрелка",
+          "key": "Q",
+          "desc": "Дальний выстрел, замедляющий цель.",
+          "type": "target_damage",
+          "range": 8.0,
+          "damage": 75,
+          "slow": 0.3,
+          "slow_duration": 1.5,
+          "mana": 30,
+          "cooldown": 5.5,
+          "color": [150, 235, 240]
+        },
+        {
+          "id": "keen_step",
+          "name": "Зоркий шаг",
+          "key": "W",
+          "desc": "Меняет позицию и ускоряется, уходя от погони.",
+          "type": "speed_buff",
+          "multiplier": 1.45,
+          "duration": 3.5,
+          "mana": 40,
+          "cooldown": 13.0,
+          "color": [170, 245, 230]
+        },
+        {
+          "id": "shrapnel_volley",
+          "name": "Шрапнель",
+          "key": "E",
+          "desc": "Залп осколков накрывает область и замедляет врагов.",
+          "type": "aoe_damage",
+          "range": 7.0,
+          "radius": 2.4,
+          "damage": 130,
+          "slow": 0.35,
+          "slow_duration": 2.5,
+          "mana": 70,
+          "cooldown": 16.0,
+          "color": [255, 190, 120]
+        },
+        {
+          "id": "sunset_shot",
+          "name": "Выстрел в закат",
+          "key": "R",
+          "desc": "Прицельный выстрел через полкарты. Наносит огромный урон одной цели.",
+          "type": "target_damage",
+          "range": 9.0,
+          "damage": 300,
+          "slow": 0.4,
+          "slow_duration": 2.0,
+          "mana": 130,
+          "cooldown": 65.0,
+          "color": [255, 245, 160]
+        }
+      ]
+    }
+  },
+  "items": {
+    "ring": {
+      "name": "Кольцо оберега",
+      "cost": 350,
+      "desc": "+3 к броне, +40 к максимальному HP",
+      "icon": "assets/items/ring.png",
+      "bonus": {"armor": 3, "hp": 40},
+      "unique": true
+    },
+    "cloak": {
+      "name": "Плащ пепельной тени",
+      "cost": 500,
+      "desc": "+2 к броне, +0.12 к скорости передвижения",
+      "icon": "assets/items/cloak.png",
+      "bonus": {"armor": 2, "speed": 0.12},
+      "unique": true
+    },
+    "staff": {
+      "name": "Посох ржавых звёзд",
+      "cost": 650,
+      "desc": "+150 к максимальной мане, +15 к урону",
+      "icon": "assets/items/staff.png",
+      "bonus": {"mana": 150, "damage": 15},
+      "unique": false
+    },
+    "orb": {
+      "name": "Сфера гнилого света",
+      "cost": 700,
+      "desc": "+22 к урону",
+      "icon": "assets/items/orb.png",
+      "bonus": {"damage": 22},
+      "unique": true
+    },
+    "greaves": {
+      "name": "Путники болот",
+      "cost": 550,
+      "desc": "+0.3 к скорости передвижения, +2 к броне",
+      "icon": "assets/items/greaves.png",
+      "bonus": {"speed": 0.3, "armor": 2},
+      "unique": true
+    }
+  },
+  "neutrals": {
+    "wolf": {
+      "name": "Волк",
+      "hp": 90,
+      "speed": 1.45,
+      "atk_range": 1.4,
+      "atk_dmg": 12,
+      "atk_cd": 0.85,
+      "radius": 0.16,
+      "projectile_speed": 8.0,
+      "gold_bounty": 14,
+      "xp_bounty": 35,
+      "melee": true,
+      "armor": 0
+    },
+    "golem": {
+      "name": "Голем",
+      "hp": 220,
+      "speed": 0.85,
+      "atk_range": 1.45,
+      "atk_dmg": 18,
+      "atk_cd": 1.25,
+      "radius": 0.25,
+      "projectile_speed": 8.0,
+      "gold_bounty": 30,
+      "xp_bounty": 60,
+      "melee": true,
+      "armor": 4
+    },
+    "troll": {
+      "name": "Тролль",
+      "hp": 140,
+      "speed": 1.05,
+      "atk_range": 2.8,
+      "atk_dmg": 16,
+      "atk_cd": 1.1,
+      "radius": 0.2,
+      "projectile_speed": 8.0,
+      "gold_bounty": 22,
+      "xp_bounty": 50,
+      "melee": false,
+      "armor": 1
+    }
+  }
+}

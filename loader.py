@@ -20,12 +20,13 @@ def load_all() -> dict:
         "heroes":   load("heroes"),
         "items":    load("items"),
         "units":    load("units"),
+        "neutrals": load("neutrals"),
         "map":      load("map"),
     }
 
 
 def validate(data: dict) -> None:
-    required = ["settings", "controls", "hero", "units", "map", "heroes", "items"]
+    required = ["settings", "controls", "hero", "units", "map", "heroes", "items", "neutrals"]
     for key in required:
         assert key in data, f"Missing config: {key}"
     assert data["hero"]["team"] in ("A", "B"), "hero.team must be A or B"
@@ -45,6 +46,12 @@ def validate(data: dict) -> None:
     assert items, "items.json has no items"
     for item_id, item in items.items():
         assert "cost" in item and "bonus" in item, f"item {item_id}: cost/bonus missing"
+
+    neutrals = data["neutrals"]
+    assert neutrals, "neutrals.json has no templates"
+    for neutral_id, neutral in neutrals.items():
+        for key in ("hp", "speed", "atk_range", "atk_dmg", "atk_cd", "radius"):
+            assert key in neutral, f"neutral {neutral_id}: {key} missing"
 
     lanes = data["map"]["lanes"]
     assert lanes, "map.lanes empty"

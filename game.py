@@ -1,3 +1,4 @@
+import json
 import math
 import random
 import sys
@@ -70,8 +71,36 @@ class AbilityEffect:
         self.lifetime -= dt
 
 
+@dataclass
+class MeleeEffect:
+    x: float
+    y: float
+    angle: float
+    color: Tuple[int, int, int]
+    lifetime: float = 0.18
+    max_lifetime: float = 0.18
+
+    def update(self, dt: float) -> None:
+        self.lifetime -= dt
+
+
 # Насколько клиент отстаёт от последнего снапшота. Даёт буфер для интерполяции.
 INTERP_DELAY = 0.06
+
+DEFAULT_CONTROLS = {
+    "stop": "s",
+    "ability_1": "q",
+    "ability_2": "w",
+    "ability_3": "e",
+    "ability_4": "r",
+    "shop": "b",
+}
+
+KEY_CODES = {}
+for _code in range(32, 512):
+    _name = pygame.key.name(_code)
+    if _name:
+        KEY_CODES[_name] = _code
 
 
 # ---------- Камера ----------
@@ -119,9 +148,18 @@ class Game:
         self.max_level = int(self.progression.get("max_level", 10))
         self.selected_hero = self.hero_order[0]
         self.hero_id = self.selected_hero
+        self.hero_page = 0
 
         self.cfg = self.data["settings"]
         self.controls = self.data["controls"]
+        for action, key_name in DEFAULT_CONTROLS.items():
+            self.controls.setdefault(action, key_name)
+        self.control_codes = {
+            action: KEY_CODES.get(self.controls.get(action, key_name), 0)
+            for action, key_name in DEFAULT_CONTROLS.items()
+        }
+        self.settings_action: Optional[str] = None
+        self.settings_message = ""
         self.map_cfg = self.data["map"]
         self.colors = {k: tuple(v) for k, v in self.cfg["colors"].items()}
 
@@ -200,7 +238,9 @@ class Game:
         self.pending_ability: Optional[int] = None
         self.shop_open = False
         self.shop_message = ""
+        self.scoreboard_open = False
         self.ability_effects: list = []
+        self.melee_effects: list = []
         self.respawn_timer = 0.0
         self.match_over = False
         self.winner: Optional[str] = None
@@ -253,6 +293,14 @@ class Game:
                 image = gfx.load_sprite(near / icon_name)
                 if image is not None:
                     self.item_icons[item_id] = image
+
+        self.neutral_sprites = {}
+        self._neutral_sprite_cache = {}
+        for neutral_id in self.data.get("neutrals", {}):
+            image = gfx.load_sprite(near / "assets" / "neutrals" / f"{neutral_id}.png")
+            if image is not None:
+                self.neutral_sprites[neutral_id] = image
+
         self.console = Console(self)
         self.menu = MenuUI(self)
         if self.state == "game":
@@ -269,6 +317,45 @@ class Game:
         else:
             self.console.log("offline mode", (150, 150, 150))
         self.console.log("press ~ or F1 to open this console", (150, 150, 150))
+
+    # ---------- настройки управления ----------
+    def save_controls(self) -> None:
+        path = Path(__file__).parent / "data" / "controls.json"
+        try:
+            with path.open("w", encoding="utf-8") as file:
+                json.dump(self.controls, file, ensure_ascii=False, indent=2)
+                file.write("\n")
+        except OSError as exc:
+            self.settings_message = f"Не удалось сохранить: {exc}"
+
+    def set_control(self, action: str, key_name: str) -> bool:
+        if action not in DEFAULT_CONTROLS:
+            return False
+        if key_name in ("", "unknown", "escape", "backquote", "f1"):
+            self.settings_message = "Эта клавиша зарезервирована"
+            return False
+        code = KEY_CODES.get(key_name)
+        if not code:
+            self.settings_message = "Неизвестная клавиша"
+            return False
+        for other_action, other_code in self.control_codes.items():
+            if other_action != action and other_code == code:
+                self.settings_message = (
+                    f"Клавиша уже используется: {pygame.key.name(other_code).upper()}"
+                )
+                return False
+        self.controls[action] = key_name
+        self.control_codes[action] = code
+        self.settings_message = f"Назначено: {key_name.upper()}"
+        self.save_controls()
+        return True
+
+    def reset_controls(self) -> None:
+        for action, key_name in DEFAULT_CONTROLS.items():
+            self.controls[action] = key_name
+            self.control_codes[action] = KEY_CODES.get(key_name, 0)
+        self.settings_message = "Управление сброшено"
+        self.save_controls()
 
     # ---------- режимы ----------
     def _setup_abilities(self) -> None:
@@ -297,11 +384,13 @@ class Game:
         self.winner = None
         self.shop_open = False
         self.shop_message = ""
+        self.scoreboard_open = False
         self.pending_ability = None
         self.move_marker = None
         self.attack_marker_uid = None
         self.floating_texts = []
         self.ability_effects = []
+        self.melee_effects = []
         self.disconnected = False
         self.status_message = ""
         self.menu_message = ""
@@ -417,7 +506,42 @@ class Game:
         self._load_creep_sprites()
         for name, error in self.sprite_errors:
             self.console.log(f"sprite {name}: {error}", (255, 180, 120))
+
+        near = Path(__file__).parent
+        self.item_icons.clear()
+        for item_id, item in self.items_data.items():
+            icon_name = item.get("icon")
+            if icon_name:
+                image = gfx.load_sprite(near / icon_name)
+                if image is not None:
+                    self.item_icons[item_id] = image
+
+        self.neutral_sprites.clear()
+        self._neutral_sprite_cache.clear()
+        for neutral_id in self.data.get("neutrals", {}):
+            image = gfx.load_sprite(near / "assets" / "neutrals" / f"{neutral_id}.png")
+            if image is not None:
+                self.neutral_sprites[neutral_id] = image
+
+        if hasattr(self, "menu"):
+            self.menu.load_portraits(self)
+
         return sorted(self.creep_sprites)
+
+    def _get_neutral_sprite(self, neutral_type: str, size: int):
+        key = ("neutral", neutral_type, size)
+        cached = self._neutral_sprite_cache.get(key)
+        if cached is not None:
+            return cached
+        image = self.neutral_sprites.get(neutral_type)
+        if image is None:
+            return None
+        width, height = image.get_size()
+        scale = size / max(width, height)
+        new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+        scaled = pygame.transform.smoothscale(image, new_size)
+        self._neutral_sprite_cache[key] = scaled
+        return scaled
 
     def _get_creep_sprite(self, team: str, size: int):
         key = (team, size)
@@ -509,6 +633,7 @@ class Game:
                 self.snaps.clear()
                 self.shop_open = False
                 self.shop_message = ""
+                self.scoreboard_open = False
                 self.pending_ability = None
                 self.move_marker = None
                 self.attack_marker_uid = None
@@ -518,6 +643,7 @@ class Game:
                 self.hero_uid = None
                 self.floating_texts = []
                 self.ability_effects = []
+                self.melee_effects = []
                 self.match_time = 0.0
                 info = (msg.get("players") or {}).get(self.player_id, {})
                 hero_id = info.get("hero")
@@ -611,6 +737,14 @@ class Game:
                 lifetime=0.7,
                 max_lifetime=0.7,
             ))
+        elif kind == "melee_attack":
+            color = event.get("color", [255, 230, 160])
+            self.melee_effects.append(MeleeEffect(
+                x=float(event.get("x", 0)),
+                y=float(event.get("y", 0)),
+                angle=float(event.get("angle", 0.0)),
+                color=tuple(color) if isinstance(color, (list, tuple)) else (255, 230, 160),
+            ))
         elif kind == "match_end":
             self.match_over = True
             winner = event.get("winner")
@@ -692,6 +826,8 @@ class Game:
                 max_hp=float(u.get("max_hp", 1.0)),
                 radius=float(u.get("radius", 0.35)),
                 atk_range=float(u.get("range", 1.5)),
+                melee=bool(u.get("melee", False)),
+                neutral_type=str(u.get("neutral_type", "")),
                 alive=bool(u.get("alive", True)),
                 atk_dmg=float(u.get("dmg", 0.0)),
                 speed=float(u.get("speed", 0.0)),
@@ -1090,6 +1226,10 @@ class Game:
             effect.update(dt)
         self.ability_effects = [e for e in self.ability_effects if e.lifetime > 0]
 
+        for effect in self.melee_effects:
+            effect.update(dt)
+        self.melee_effects = [e for e in self.melee_effects if e.lifetime > 0]
+
         self._update_ping(dt)
 
     # ---------- отрисовка ----------
@@ -1164,8 +1304,15 @@ class Game:
 
     def draw_map(self, surface):
         c = self.colors
-        for gx in range(Grid.grid_w):
-            for gy in range(Grid.grid_h):
+        tile = Grid.tile_size * Grid.zoom
+        sw, sh = surface.get_size()
+        gx0 = max(0, int(self.camera.x // tile) - 1)
+        gx1 = min(Grid.grid_w, int((self.camera.x + sw) // tile) + 2)
+        gy0 = max(0, int(self.camera.y // tile) - 1)
+        gy1 = min(Grid.grid_h, int((self.camera.y + sh) // tile) + 2)
+
+        for gx in range(gx0, gx1):
+            for gy in range(gy0, gy1):
                 col = c["grass"] if (gx + gy) % 2 == 0 else c["grass2"]
                 self._tile(surface, gx, gy, col, 1.0)
 
@@ -1173,8 +1320,8 @@ class Game:
         river_color = c.get("river", (28, 86, 132))
         river_color2 = c.get("river2", (34, 100, 150))
         wave_color = c.get("river_wave", (95, 175, 220))
-        for gx in range(Grid.grid_w):
-            for gy in range(Grid.grid_h):
+        for gx in range(gx0, gx1):
+            for gy in range(gy0, gy1):
                 cx = gx + 0.5
                 cy = gy + 0.5
                 if abs(cx - cy) <= 1.15:
@@ -1208,6 +1355,8 @@ class Game:
             base_r = 30
         elif unit.kind == "creep_ranged":
             base_r = 8
+        elif unit.kind == "neutral":
+            base_r = 10
         else:
             base_r = 9
         r = base_r * Grid.zoom * 0.7
@@ -1223,6 +1372,8 @@ class Game:
                 color = (70, 70, 70)
         elif unit.kind == "creep_ranged":
             color = c.get("creep_ranged_a", c["creep_a"]) if unit.team == "A" else c.get("creep_ranged_b", c["creep_b"])
+        elif unit.kind == "neutral":
+            color = (190, 170, 120)
         else:
             color = c["creep_a"] if unit.team == "A" else c["creep_b"]
 
@@ -1232,6 +1383,14 @@ class Game:
             sprite = self._get_creep_sprite(unit.team, sprite_size)
             if sprite is not None:
                 # У спрайтов уже есть мягкая тень, второй овал не нужен.
+                sprite_rect = sprite.get_rect(
+                    midbottom=(int(sx), int(sy + sprite_size * 0.12))
+                )
+                surface.blit(sprite, sprite_rect)
+        elif unit.kind == "neutral":
+            sprite_size = int(20 * Grid.zoom)
+            sprite = self._get_neutral_sprite(unit.neutral_type, sprite_size)
+            if sprite is not None:
                 sprite_rect = sprite.get_rect(
                     midbottom=(int(sx), int(sy + sprite_size * 0.12))
                 )
@@ -1305,22 +1464,43 @@ class Game:
             ]
             pygame.draw.polygon(surface, (255, 215, 0), crown)
 
+    def draw_camp_markers(self, surface):
+        tile = Grid.tile_size * Grid.zoom
+        for camp in self.map_cfg.get("neutrals", []):
+            pos = camp.get("pos")
+            if not pos:
+                continue
+            sx, sy = Grid.to_screen(float(pos[0]), float(pos[1]))
+            sx, sy = self.camera.apply(sx, sy)
+            radius = max(6, int(tile * 0.52))
+            pygame.draw.circle(surface, (88, 76, 48, 42), (int(sx), int(sy)), radius)
+            pygame.draw.circle(surface, (150, 130, 80, 90), (int(sx), int(sy)), radius, 1)
+
+        for pos in self.map_cfg.get("runes", []):
+            sx, sy = Grid.to_screen(float(pos[0]), float(pos[1]))
+            sx, sy = self.camera.apply(sx, sy)
+            radius = max(5, int(tile * 0.35))
+            pygame.draw.circle(surface, (120, 220, 255, 80), (int(sx), int(sy)), radius)
+            pygame.draw.circle(surface, (190, 245, 255, 220), (int(sx), int(sy)), radius, 2)
+
     def draw_world(self, surface):
         self.draw_map(surface)
+        self.draw_camp_markers(surface)
         self.draw_debug_grid(surface)
         self.draw_hitboxes(surface)
 
-        # Радиусы атаки вышек. Рисуем прямо на SRCALPHA-поверхности,
-        # без гигантских кэшей на 100+ МБ.
-        for unit in self.units:
-            if not unit.alive or unit.kind != "tower":
-                continue
-            sx, sy = Grid.to_screen(unit.pos[0], unit.pos[1])
-            sx, sy = self.camera.apply(sx, sy)
-            radius_px = int(unit.atk_range * Grid.tile_size * Grid.zoom)
-            color = (255, 50, 50, 40) if unit.team == "B" else (50, 100, 255, 40)
-            pygame.draw.circle(surface, color, (int(sx), int(sy)), radius_px)
-            pygame.draw.circle(surface, (*color[:3], 120), (int(sx), int(sy)), radius_px, 2)
+        # Радиусы атаки вышек — только пока зажат Alt.
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LALT] or keys[pygame.K_RALT]:
+            for unit in self.units:
+                if not unit.alive or unit.kind != "tower":
+                    continue
+                sx, sy = Grid.to_screen(unit.pos[0], unit.pos[1])
+                sx, sy = self.camera.apply(sx, sy)
+                radius_px = int(unit.atk_range * Grid.tile_size * Grid.zoom)
+                color = (255, 50, 50, 40) if unit.team == "B" else (50, 100, 255, 40)
+                pygame.draw.circle(surface, color, (int(sx), int(sy)), radius_px)
+                pygame.draw.circle(surface, (*color[:3], 120), (int(sx), int(sy)), radius_px, 2)
 
         if self.move_marker is not None:
             mx, my = Grid.to_screen(*self.move_marker)
@@ -1350,6 +1530,23 @@ class Game:
             pygame.draw.circle(surface, (*effect.color, alpha),
                                (int(sx), int(sy)), radius, 2)
 
+        for effect in self.melee_effects:
+            sx, sy = Grid.to_screen(effect.x, effect.y)
+            sx, sy = self.camera.apply(sx, sy)
+            alpha = int(230 * (effect.lifetime / max(0.001, effect.max_lifetime)))
+            radius = 24
+            pygame.draw.arc(
+                surface, (*effect.color, max(30, alpha)),
+                (int(sx - radius), int(sy - radius), radius * 2, radius * 2),
+                effect.angle - 0.9, effect.angle + 0.9, 3,
+            )
+            inner = 15
+            pygame.draw.arc(
+                surface, (*effect.color, max(20, alpha // 2)),
+                (int(sx - inner), int(sy - inner), inner * 2, inner * 2),
+                effect.angle - 0.7, effect.angle + 0.7, 2,
+            )
+
         if self.pending_ability is not None and self.pending_ability < len(self.abilities):
             ability = self.abilities[self.pending_ability]
             color = tuple(ability.get("color", (255, 255, 255)))
@@ -1373,6 +1570,8 @@ class Game:
             self.menu.draw_menu(self.screen, self)
         elif self.state == "lobby":
             self.menu.draw_lobby(self.screen, self)
+        elif self.state == "settings":
+            self.menu.draw_settings(self.screen, self)
         else:
             self.screen.fill(self.colors["bg"])
 
@@ -1386,6 +1585,9 @@ class Game:
 
             if self.shop_open:
                 self.ui.draw_shop(self.screen)
+
+            if self.scoreboard_open:
+                self.ui.draw_scoreboard(self.screen)
 
             if self.match_over:
                 self.ui.draw_match_end(self.screen)
@@ -1416,9 +1618,14 @@ class Game:
                         self.console.handle_key(event)
                         continue
 
-                    if self.state in ("menu", "lobby"):
+                    if self.state in ("menu", "lobby", "settings"):
                         if event.key == pygame.K_ESCAPE:
-                            if self.state == "lobby":
+                            if self.state == "settings":
+                                if self.settings_action:
+                                    self.settings_action = None
+                                else:
+                                    self.state = "menu"
+                            elif self.state == "lobby":
                                 self.leave_lobby()
                             elif self.menu_ip_focus:
                                 self.menu_ip_focus = False
@@ -1438,16 +1645,20 @@ class Game:
                         self.toggle_fullscreen()
                     elif event.key == pygame.K_o:
                         self.show_ui = not self.show_ui
-                    elif event.key == pygame.K_s:
+                    elif event.key == self.control_codes["stop"]:
                         self.command_stop()
-                    elif event.key == pygame.K_b:
+                    elif event.key == self.control_codes["shop"]:
                         self.toggle_shop()
-                    elif event.key == pygame.K_q:
+                    elif event.key == self.control_codes["ability_1"]:
                         self.cast_ability(0)
-                    elif event.key == pygame.K_w:
+                    elif event.key == self.control_codes["ability_2"]:
                         self.cast_ability(1)
-                    elif event.key == pygame.K_e:
+                    elif event.key == self.control_codes["ability_3"]:
                         self.cast_ability(2)
+                    elif event.key == self.control_codes["ability_4"]:
+                        self.cast_ability(3)
+                    elif event.key == pygame.K_TAB:
+                        self.scoreboard_open = not self.scoreboard_open
                     continue
 
                 # Пока открыта консоль, не командуем героем мышью.

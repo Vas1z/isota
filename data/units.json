@@ -5,10 +5,11 @@
     "atk_range": 1.4,
     "atk_dmg": 8,
     "atk_cd": 1.0,
-    "radius": 0.28,
+    "radius": 0.14,
     "projectile_speed": 8.0,
     "gold_bounty": 5,
-    "xp_bounty": 20
+    "xp_bounty": 20,
+    "melee": true
   },
   "creep_ranged": {
     "hp": 40,
@@ -16,10 +17,11 @@
     "atk_range": 2.8,
     "atk_dmg": 10,
     "atk_cd": 1.1,
-    "radius": 0.26,
+    "radius": 0.13,
     "projectile_speed": 8.0,
     "gold_bounty": 6,
-    "xp_bounty": 25
+    "xp_bounty": 25,
+    "melee": false
   },
   "tower": {
     "hp": 900,
@@ -27,11 +29,12 @@
     "atk_range": 3.5,
     "atk_dmg": 40,
     "atk_cd": 1.0,
-    "radius": 0.5,
+    "radius": 0.25,
     "projectile_speed": 10.0,
     "gold_bounty": 0,
     "xp_bounty": 100,
-    "armor": 5
+    "armor": 5,
+    "melee": false
   },
   "throne": {
     "hp": 2500,
@@ -39,10 +42,11 @@
     "atk_range": 0,
     "atk_dmg": 0,
     "atk_cd": 1.0,
-    "radius": 0.9,
+    "radius": 0.45,
     "projectile_speed": 0,
     "gold_bounty": 0,
     "xp_bounty": 0,
-    "armor": 10
+    "armor": 10,
+    "melee": false
   }
 }

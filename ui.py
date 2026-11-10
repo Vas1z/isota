@@ -1,3 +1,5 @@
+import math
+
 import pygame
 from typing import Tuple
 
@@ -96,6 +98,11 @@ class UI:
             color = self.colors["base_a"] if team == "A" else self.colors["base_b"]
             pygame.draw.circle(surface, color, (int(mx + px), int(my + py)), 5)
 
+        for rx, ry in self.game.map_cfg.get("runes", []):
+            px, py = self.world_to_minimap(rx, ry)
+            pygame.draw.circle(surface, (170, 235, 255), (int(mx + px), int(my + py)), 3)
+            pygame.draw.circle(surface, (90, 170, 220), (int(mx + px), int(my + py)), 3, 1)
+
         for u in self.game.units:
             if not u.alive:
                 continue
@@ -103,6 +110,8 @@ class UI:
             sx, sy = int(mx + px), int(my + py)
             if u.kind == "hero":
                 pygame.draw.circle(surface, self.mm_colors["hero"], (sx, sy), 4)
+            elif u.kind == "neutral":
+                pygame.draw.circle(surface, (210, 180, 120), (sx, sy), 2)
             elif u.kind == "throne":
                 col = self.colors["base_a"] if u.team == "A" else self.colors["base_b"]
                 pygame.draw.rect(surface, col, (sx - 4, sy - 4, 8, 8))
@@ -162,11 +171,16 @@ class UI:
         )
         surface.blit(cs_text, (cx + 10, cy + 8))
 
-        # Таймер (сверху по центру)
-        m = int(self.game.match_time // 60)
-        s = int(self.game.match_time % 60)
-        timer_text = f"{m:02d}:{s:02d}"
-        timer_surf = self.big_font.render(timer_text, True, self.colors["text"])
+        # Таймер (сверху по центру). До 0:00 показываем обратный отсчёт.
+        t = float(self.game.match_time)
+        if t < 0:
+            remaining = int(math.ceil(-t))
+            timer_text = f"-{remaining // 60:02d}:{remaining % 60:02d}"
+            timer_color = (255, 220, 140)
+        else:
+            timer_text = f"{int(t // 60):02d}:{int(t % 60):02d}"
+            timer_color = self.colors["text"]
+        timer_surf = self.big_font.render(timer_text, True, timer_color)
         tw = timer_surf.get_width()
         pygame.draw.rect(surface, (10, 14, 20), (sw // 2 - tw // 2 - 12, 8, tw + 24, 32))
         pygame.draw.rect(surface, (80, 90, 110), (sw // 2 - tw // 2 - 12, 8, tw + 24, 32), 2)
@@ -236,7 +250,7 @@ class UI:
             return
 
         sw, sh = surface.get_size()
-        abilities = game.abilities[:3]
+        abilities = game.abilities[:4]
         slot = 54
         gap = 10
         total = len(abilities) * slot + (len(abilities) - 1) * gap
@@ -274,7 +288,8 @@ class UI:
             surface.blit(cost_surf, (rect.right - cost_surf.get_width() - 4, rect.bottom - 13))
 
         hint = self.small_font.render(
-            "Q W E — способности    B — магазин", True, (150, 165, 185)
+            "Q W E R — способности    B — магазин    Alt — радиусы вышек",
+            True, (150, 165, 185),
         )
         surface.blit(hint, (sw // 2 - hint.get_width() // 2, y - 14))
 
@@ -379,13 +394,28 @@ class UI:
         kda_surf = self.mid_font.render(kda, True, (225, 230, 240))
         surface.blit(kda_surf, (bar_x, py + 82))
 
-        owned = ", ".join(
-            self.game.items_data.get(item_id, {}).get("name", item_id)
-            for item_id in self.game.items
-        )
-        if owned:
-            owned_surf = self.small_font.render(self._fit_text(owned, self.small_font, bar_w), True, (190, 210, 235))
-            surface.blit(owned_surf, (bar_x, py + 97))
+        # 6 слотов инвентаря.
+        slot_size = 28
+        slot_gap = 4
+        slots_x = bar_x + 310
+        slots_y = py + 82
+        for slot in range(6):
+            cell = pygame.Rect(
+                slots_x + slot * (slot_size + slot_gap),
+                slots_y,
+                slot_size,
+                slot_size,
+            )
+            pygame.draw.rect(surface, (20, 28, 40), cell, border_radius=4)
+            pygame.draw.rect(surface, (70, 90, 120), cell, 1, border_radius=4)
+            if slot < len(self.game.items):
+                item_id = self.game.items[slot]
+                icon = self.game.item_icons.get(item_id)
+                if icon is not None:
+                    scaled = pygame.transform.smoothscale(icon, (24, 24))
+                    surface.blit(scaled, scaled.get_rect(center=cell.center))
+                else:
+                    pygame.draw.rect(surface, (90, 110, 140), cell.inflate(-8, -8), border_radius=3)
 
     def draw_shop(self, surface):
         game = self.game
@@ -394,7 +424,7 @@ class UI:
         overlay.fill((0, 0, 0, 140))
         surface.blit(overlay, (0, 0))
 
-        width, height = 680, 446
+        width, height = 820, 500
         x = sw // 2 - width // 2
         y = sh // 2 - height // 2
         pygame.draw.rect(surface, (12, 18, 27), (x, y, width, height), border_radius=12)
@@ -407,15 +437,23 @@ class UI:
 
         self.shop_rects.clear()
         items = list(game.items_data.items())
+        col_w = (width - 48) // 2
         for i, (item_id, item) in enumerate(items):
-            row = pygame.Rect(x + 16, y + 56 + i * 70, width - 32, 60)
+            col = i % 2
+            row_index = i // 2
+            row = pygame.Rect(
+                x + 16 + col * (col_w + 16),
+                y + 56 + row_index * 76,
+                col_w,
+                66,
+            )
             self.shop_rects[item_id] = row
             owned = game.items.count(item_id)
             can_buy = game.gold >= item.get("cost", 0) and not (item.get("unique") and owned)
             pygame.draw.rect(surface, (20, 30, 43) if can_buy else (28, 24, 28), row, border_radius=6)
             pygame.draw.rect(surface, (60, 85, 115), row, 1, border_radius=6)
 
-            icon_rect = pygame.Rect(row.x + 8, row.y + 8, 44, 44)
+            icon_rect = pygame.Rect(row.x + 8, row.y + 9, 44, 44)
             icon = game.item_icons.get(item_id)
             if icon is not None:
                 scaled = pygame.transform.smoothscale(icon, (40, 40))
@@ -425,8 +463,11 @@ class UI:
 
             name = self.mid_font.render(item.get("name", item_id), True, (235, 240, 248))
             surface.blit(name, (row.x + 62, row.y + 7))
-            desc = self.small_font.render(item.get("desc", ""), True, (165, 180, 200))
-            surface.blit(desc, (row.x + 62, row.y + 26))
+            desc = self.small_font.render(
+                self._fit_text(item.get("desc", ""), self.small_font, col_w - 160),
+                True, (165, 180, 200),
+            )
+            surface.blit(desc, (row.x + 62, row.y + 27))
 
             count = f" x{owned}" if owned else ""
             price_color = (255, 215, 0) if can_buy else (220, 110, 110)
@@ -434,7 +475,7 @@ class UI:
             surface.blit(price, (row.right - price.get_width() - 12, row.y + 7))
             if item.get("unique") and owned:
                 sold = self.small_font.render("куплено", True, (140, 210, 150))
-                surface.blit(sold, (row.right - sold.get_width() - 12, row.y + 32))
+                surface.blit(sold, (row.right - sold.get_width() - 12, row.y + 34))
 
         hint = self.small_font.render(
             "ЛКМ — купить    B или ПКМ — закрыть", True, (150, 165, 185)
@@ -442,13 +483,88 @@ class UI:
         surface.blit(hint, (x + 20, y + height - 26))
         if game.shop_message:
             msg = self.mid_font.render(game.shop_message, True, (255, 210, 140))
-            surface.blit(msg, (x + 250, y + height - 28))
+            surface.blit(msg, (x + 280, y + height - 28))
 
     def shop_hit(self, pos):
         for item_id, rect in self.shop_rects.items():
             if rect.collidepoint(pos):
                 return item_id
         return None
+
+    def draw_scoreboard(self, surface):
+        game = self.game
+        if game.net_mode:
+            players = game.snaps[-1].data.get("players", {}) if game.snaps else {}
+        elif game.world is not None:
+            players = {
+                pid: {
+                    "team": p.team,
+                    "name": p.name,
+                    "hero_id": p.hero_id,
+                    "kills": p.kills,
+                    "deaths": p.deaths,
+                    "assists": p.assists,
+                    "cs": p.cs,
+                    "denies": p.denies,
+                    "gold": int(p.gold),
+                    "level": p.level,
+                    "items": list(p.items),
+                }
+                for pid, p in game.world.players.items()
+            }
+        else:
+            players = {}
+
+        sw, sh = surface.get_size()
+        overlay = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 170))
+        surface.blit(overlay, (0, 0))
+
+        width, height = 900, 430
+        x = sw // 2 - width // 2
+        y = sh // 2 - height // 2
+        pygame.draw.rect(surface, (10, 16, 25), (x, y, width, height), border_radius=12)
+        pygame.draw.rect(surface, (100, 130, 170), (x, y, width, height), 2, border_radius=12)
+        title = self.big_font.render("ТАБЛИЦА", True, (255, 225, 140))
+        surface.blit(title, (x + 20, y + 14))
+        hint = self.small_font.render("Tab — закрыть", True, (150, 165, 185))
+        surface.blit(hint, (x + width - hint.get_width() - 20, y + 20))
+
+        teams = {"A": [], "B": []}
+        for pid, player in players.items():
+            team = player.get("team", "A")
+            if team in teams:
+                teams[team].append((pid, player))
+        for team in teams:
+            teams[team].sort(key=lambda item: (-int(item[1].get("kills", 0)), item[0]))
+
+        for index, team in enumerate(("A", "B")):
+            col_x = x + 24 + index * 450
+            team_color = (120, 180, 255) if team == "A" else (255, 130, 120)
+            label = "СИЛЫ СВЕТА" if team == "A" else "СИЛЫ ТЬМЫ"
+            surface.blit(self.big_font.render(label, True, team_color), (col_x, y + 52))
+            header = self.small_font.render("игрок / герой          K/D/A     CS/D   золото", True, (150, 165, 185))
+            surface.blit(header, (col_x, y + 82))
+            row_y = y + 104
+            for pid, player in teams[team]:
+                hero_id = player.get("hero_id", "")
+                hero_name = game.heroes.get(hero_id, {}).get("name", hero_id)
+                name = str(player.get("name", pid))
+                if pid == game.player_id:
+                    name += " (ты)"
+                name = self._fit_text(f"{name} / {hero_name}", self.mid_font, 210)
+                surface.blit(self.mid_font.render(name, True, (230, 235, 245)), (col_x, row_y))
+                kda = f"{player.get('kills', 0)}/{player.get('deaths', 0)}/{player.get('assists', 0)}"
+                surface.blit(self.mid_font.render(kda, True, (225, 230, 240)), (col_x + 215, row_y))
+                cs = f"{player.get('cs', 0)}/{player.get('denies', 0)}"
+                surface.blit(self.mid_font.render(cs, True, (200, 215, 230)), (col_x + 280, row_y))
+                gold = str(player.get("gold", 0))
+                surface.blit(self.mid_font.render(gold, True, (255, 215, 0)), (col_x + 330, row_y))
+                items = player.get("items", [])
+                if items:
+                    item_text = self.small_font.render(f"{len(items)} предм.", True, (150, 180, 210))
+                    surface.blit(item_text, (col_x + 365, row_y + 1))
+                row_y += 42
 
     def draw_match_end(self, surface):
         sw, sh = surface.get_size()

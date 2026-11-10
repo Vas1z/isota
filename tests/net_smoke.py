@@ -97,8 +97,8 @@ def main() -> int:
         assert start_a["players"][welcome_b["player_id"]]["hero"] == "archer"
 
         # Двигаем героев в разные стороны.
-        a.send_command(1, {"type": "move", "x": 6.0, "y": 18.0})
-        b.send_command(1, {"type": "move", "x": 18.0, "y": 6.0})
+        a.send_command(1, {"type": "move", "x": 6.0, "y": 38.0})
+        b.send_command(1, {"type": "move", "x": 38.0, "y": 5.0})
 
         messages = collect(a, 2.5)
         snaps = [m["data"] for m in messages if m.get("type") == "snap"]
@@ -113,8 +113,8 @@ def main() -> int:
         unit_a = next(u for u in latest["units"] if u["id"] == hero_a)
         unit_b = next(u for u in latest["units"] if u["id"] == hero_b)
 
-        assert unit_a["y"] < 20.0 - 0.3, f"hero A did not move: {unit_a}"
-        assert unit_b["x"] < 20.0 - 0.3, f"hero B did not move: {unit_b}"
+        assert unit_a["y"] < 42.0, f"hero A did not move: {unit_a}"
+        assert unit_b["x"] < 41.0, f"hero B did not move: {unit_b}"
 
         player_a = latest["players"][welcome_a["player_id"]]
         assert player_a["hero_id"] == "knight"

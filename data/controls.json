@@ -1,9 +1,27 @@
 {
-  "move_up":    ["w", "up"],
-  "move_down":  ["s", "down"],
-  "move_left":  ["a", "left"],
-  "move_right": ["d", "right"],
-  "attack":     "mouse_right",
-  "stop":       "s",
-  "quit":       "escape"
+  "move_up": [
+    "w",
+    "up"
+  ],
+  "move_down": [
+    "s",
+    "down"
+  ],
+  "move_left": [
+    "a",
+    "left"
+  ],
+  "move_right": [
+    "d",
+    "right"
+  ],
+  "attack": "mouse_right",
+  "stop": "s",
+  "ability_1": "q",
+  "ability_2": "w",
+  "ability_3": "e",
+  "ability_4": "r",
+  "shop": "b",
+  "console": "backquote",
+  "quit": "escape"
 }

@@ -5,7 +5,9 @@
       "cost": 250,
       "desc": "+0.35 к скорости передвижения",
       "icon": "assets/items/boots.png",
-      "bonus": {"speed": 0.35},
+      "bonus": {
+        "speed": 0.35
+      },
       "unique": true
     },
     "blade": {
@@ -13,7 +15,9 @@
       "cost": 450,
       "desc": "+12 к урону",
       "icon": "assets/items/blade.png",
-      "bonus": {"damage": 12},
+      "bonus": {
+        "damage": 12
+      },
       "unique": false
     },
     "armor": {
@@ -21,7 +25,9 @@
       "cost": 400,
       "desc": "+6 к броне",
       "icon": "assets/items/armor.png",
-      "bonus": {"armor": 6},
+      "bonus": {
+        "armor": 6
+      },
       "unique": false
     },
     "mana_crystal": {
@@ -29,7 +35,9 @@
       "cost": 300,
       "desc": "+120 к максимальной мане",
       "icon": "assets/items/mana_crystal.png",
-      "bonus": {"mana": 120},
+      "bonus": {
+        "mana": 120
+      },
       "unique": false
     },
     "heart": {
@@ -37,8 +45,64 @@
       "cost": 600,
       "desc": "+150 к максимальному HP",
       "icon": "assets/items/heart.png",
-      "bonus": {"hp": 150},
+      "bonus": {
+        "hp": 150
+      },
       "unique": false
+    },
+    "ring": {
+      "name": "Кольцо оберега",
+      "cost": 350,
+      "desc": "+3 к броне, +40 к максимальному HP",
+      "icon": "assets/items/ring.png",
+      "bonus": {
+        "armor": 3,
+        "hp": 40
+      },
+      "unique": true
+    },
+    "cloak": {
+      "name": "Плащ пепельной тени",
+      "cost": 500,
+      "desc": "+2 к броне, +0.12 к скорости передвижения",
+      "icon": "assets/items/cloak.png",
+      "bonus": {
+        "armor": 2,
+        "speed": 0.12
+      },
+      "unique": true
+    },
+    "staff": {
+      "name": "Посох ржавых звёзд",
+      "cost": 650,
+      "desc": "+150 к максимальной мане, +15 к урону",
+      "icon": "assets/items/staff.png",
+      "bonus": {
+        "mana": 150,
+        "damage": 15
+      },
+      "unique": false
+    },
+    "orb": {
+      "name": "Сфера гнилого света",
+      "cost": 700,
+      "desc": "+22 к урону",
+      "icon": "assets/items/orb.png",
+      "bonus": {
+        "damage": 22
+      },
+      "unique": true
+    },
+    "greaves": {
+      "name": "Путники болот",
+      "cost": 550,
+      "desc": "+0.3 к скорости передвижения, +2 к броне",
+      "icon": "assets/items/greaves.png",
+      "bonus": {
+        "speed": 0.3,
+        "armor": 2
+      },
+      "unique": true
     }
   }
 }

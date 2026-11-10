@@ -22,12 +22,18 @@ class MenuUI:
         self._portrait_cache = {}
         self.hero_rects = {}
         self.buttons = {}
+        self.setting_rows = {}
         self.ip_rect = None
         self.title_font = pygame.font.SysFont("consolas", 64, bold=True)
         self.card_title = pygame.font.SysFont("consolas", 16, bold=True)
         self.small = pygame.font.SysFont("consolas", 12)
         self.mid = pygame.font.SysFont("consolas", 14)
 
+        self.load_portraits(game)
+
+    def load_portraits(self, game):
+        self.portraits.clear()
+        self._portrait_cache.clear()
         base = Path(__file__).parent
         for hero_id, hero in game.heroes.items():
             image = gfx.load_sprite(base / hero.get("portrait", ""))
@@ -134,13 +140,23 @@ class MenuUI:
             surface, "Выбери героя, затем оффлайн или LAN-лобби",
             self.small, (160, 170, 185), (44, 116),
         )
+        self._button(
+            surface, pygame.Rect(width - 210, 30, 170, 40),
+            "Настройки", "settings", color=(58, 70, 96),
+        )
 
+        per_page = 5
+        page_count = max(1, (len(game.hero_order) + per_page - 1) // per_page)
+        game.hero_page = max(0, min(game.hero_page, page_count - 1))
+        visible_heroes = game.hero_order[
+            game.hero_page * per_page:(game.hero_page + 1) * per_page
+        ]
         card_w, card_h, gap = 180, 190, 16
-        total_w = len(game.hero_order) * card_w + (len(game.hero_order) - 1) * gap
+        total_w = len(visible_heroes) * card_w + (len(visible_heroes) - 1) * gap
         start_x = (width - total_w) // 2
         y = 142
 
-        for index, hero_id in enumerate(game.hero_order):
+        for index, hero_id in enumerate(visible_heroes):
             hero = game.heroes[hero_id]
             rect = pygame.Rect(start_x + index * (card_w + gap), y, card_w, card_h)
             self.hero_rects[hero_id] = rect
@@ -159,6 +175,20 @@ class MenuUI:
             color = PRIMARY_COLOR.get(primary, (220, 220, 220))
             self._text(surface, PRIMARY_LABEL.get(primary, primary).upper(), self.small, color,
                        (rect.centerx, rect.y + 172), center=True)
+
+        if page_count > 1:
+            self._button(
+                surface, pygame.Rect(start_x - 64, y + 68, 46, 50),
+                "<", "hero_prev", color=(45, 60, 85),
+            )
+            self._button(
+                surface, pygame.Rect(start_x + total_w + 18, y + 68, 46, 50),
+                ">", "hero_next", color=(45, 60, 85),
+            )
+            self._text(
+                surface, f"{game.hero_page + 1}/{page_count}", self.small,
+                (170, 185, 205), (start_x + total_w // 2, y - 10), center=True,
+            )
 
         details = pygame.Rect(100, 350, width - 200, 240)
         self._panel(surface, details, accent=(80, 105, 140), fill=(11, 17, 26))
@@ -191,7 +221,7 @@ class MenuUI:
             self._text(surface, game.menu_message, self.mid, (255, 220, 150), (44, 682))
         self._text(
             surface,
-            "ПКМ — идти/атаковать · Q/W/E — способности · B — магазин · "
+            "ПКМ — идти/атаковать · Q/W/E/R — способности · B — магазин · "
             "ПКМ по своему крипу <40% — deny · ~ — консоль",
             self.small, (130, 145, 165), (44, 700),
         )
@@ -212,6 +242,9 @@ class MenuUI:
         color = PRIMARY_COLOR.get(primary, (220, 220, 220))
         self._text(surface, f"Основной атрибут: {PRIMARY_LABEL.get(primary, primary)}",
                    self.mid, color, (rect.x + 24, rect.y + 66))
+        attack_type = "Ближний бой" if hero.get("melee") else "Дальний бой"
+        self._text(surface, attack_type, self.mid, (210, 220, 235),
+                   (rect.x + 310, rect.y + 66))
 
         attrs = [
             ("СИЛА", int(base.get("str", 0)), PRIMARY_COLOR["str"]),
@@ -239,8 +272,8 @@ class MenuUI:
         ab_x = rect.x + 540
         self._text(surface, "СПОСОБНОСТИ", self.mid, (255, 220, 130), (ab_x, rect.y + 16))
         abilities = hero.get("abilities", [])
-        for i, ability in enumerate(abilities[:3]):
-            y = rect.y + 44 + i * 58
+        for i, ability in enumerate(abilities[:4]):
+            y = rect.y + 44 + i * 44
             key = ability.get("key", "?")
             badge = pygame.Rect(ab_x, y, 28, 28)
             pygame.draw.rect(surface, (45, 65, 90), badge, border_radius=5)
@@ -314,9 +347,20 @@ class MenuUI:
         self._panel(surface, picker, accent=(80, 105, 140), fill=(11, 17, 26))
         self._text(surface, "ТВОЙ ГЕРОЙ", self.mid, (255, 220, 130), (picker.x + 18, picker.y + 14))
 
+        my_hero = next(
+            (p.get("hero") for p in players if p.get("id") == game.player_id), None
+        )
+        cell_w = (picker.w - 42) // 2
         for i, hero_id in enumerate(game.hero_order):
             hero = game.heroes[hero_id]
-            row = pygame.Rect(picker.x + 14, picker.y + 44 + i * 56, picker.w - 28, 48)
+            col = i % 2
+            row_index = i // 2
+            row = pygame.Rect(
+                picker.x + 14 + col * (cell_w + 14),
+                picker.y + 44 + row_index * 56,
+                cell_w,
+                48,
+            )
             self.hero_rects[hero_id] = row
             selected = hero_id == game.selected_hero
             pygame.draw.rect(surface, (24, 38, 52) if selected else (18, 27, 39), row,
@@ -325,17 +369,13 @@ class MenuUI:
                              row, 2 if selected else 1, border_radius=6)
             portrait_rect = pygame.Rect(row.x + 5, row.y + 5, 38, 38)
             self._portrait(surface, hero_id, portrait_rect)
-            self._text(surface, hero.get("name", hero_id), self.mid, (235, 238, 245),
-                       (row.x + 52, row.y + 5))
+            name = game.ui._fit_text(hero.get("name", hero_id), self.mid, cell_w - 92)
+            self._text(surface, name, self.mid, (235, 238, 245), (row.x + 50, row.y + 5))
             primary = hero.get("primary", "str")
             self._text(surface, PRIMARY_LABEL.get(primary, primary), self.small,
-                       PRIMARY_COLOR.get(primary, (200, 200, 200)), (row.x + 52, row.y + 25))
-            if player_hero := next(
-                (p.get("hero") for p in players if p.get("id") == game.player_id), None
-            ):
-                if player_hero == hero_id:
-                    self._text(surface, "ВЫБРАН", self.small, (150, 235, 160),
-                               (row.right - 76, row.y + 16))
+                       PRIMARY_COLOR.get(primary, (200, 200, 200)), (row.x + 50, row.y + 25))
+            if my_hero == hero_id:
+                pygame.draw.circle(surface, (255, 215, 110), (row.right - 12, row.y + 12), 4)
 
         button_y = 570
         me = next((p for p in players if p.get("id") == game.player_id), None)
@@ -363,8 +403,82 @@ class MenuUI:
                    self.small, (130, 145, 165), (44, 690))
 
     # ---------- input ----------
+    def draw_settings(self, surface, game):
+        self.buttons.clear()
+        self.setting_rows.clear()
+        width, height = surface.get_size()
+        self._background(surface)
+        self._text(surface, "НАСТРОЙКИ", self.title_font, (235, 240, 250), (40, 26))
+        self._text(surface, "Управление", game.ui.big_font, (150, 225, 255), (44, 96))
+        self._text(
+            surface, "Нажми на действие, затем нажми новую клавишу.",
+            self.small, (160, 175, 195), (44, 124),
+        )
+
+        panel = pygame.Rect(220, 158, width - 440, 360)
+        self._panel(surface, panel, accent=(80, 105, 140), fill=(11, 17, 26))
+
+        actions = [
+            ("stop", "Остановка"),
+            ("ability_1", "Способность 1"),
+            ("ability_2", "Способность 2"),
+            ("ability_3", "Способность 3"),
+            ("ability_4", "Способность 4"),
+            ("shop", "Магазин"),
+        ]
+        for i, (action, label) in enumerate(actions):
+            row = pygame.Rect(panel.x + 24, panel.y + 28 + i * 56, panel.w - 48, 44)
+            self.setting_rows[action] = row
+            active = game.settings_action == action
+            pygame.draw.rect(surface, (32, 48, 66) if active else (18, 27, 39),
+                             row, border_radius=7)
+            pygame.draw.rect(surface, (255, 215, 110) if active else (55, 75, 100),
+                             row, 2 if active else 1, border_radius=7)
+            self._text(surface, label, self.mid, (230, 235, 245), (row.x + 14, row.y + 12))
+            code = game.control_codes.get(action, 0)
+            key_name = pygame.key.name(code).upper() if code else "—"
+            if active:
+                key_name = "нажми клавишу..."
+            self._text(surface, key_name, self.mid, (150, 220, 255),
+                       (row.right - 180, row.y + 12))
+
+        note = self.small.render(
+            "ПКМ — атака, стрелки — камера (фиксировано). Esc / ~ / F1 зарезервированы.",
+            True, (135, 150, 170),
+        )
+        surface.blit(note, (panel.x + 24, panel.bottom + 18))
+
+        self._button(surface, pygame.Rect(220, 560, 220, 46), "Сброс", "reset",
+                     color=(90, 70, 70))
+        self._button(surface, pygame.Rect(460, 560, 220, 46), "Назад", "back",
+                     color=(55, 80, 130))
+
+        if game.settings_message:
+            self._text(surface, game.settings_message, self.mid, (255, 220, 150),
+                       (44, 660))
+
     def handle_click(self, pos, game):
+        if game.state == "settings":
+            for action, rect in self.setting_rows.items():
+                if rect.collidepoint(pos):
+                    game.settings_action = action
+                    game.settings_message = ""
+                    return
+            if "reset" in self.buttons and self.buttons["reset"].collidepoint(pos):
+                game.reset_controls()
+            elif "back" in self.buttons and self.buttons["back"].collidepoint(pos):
+                game.state = "menu"
+                game.settings_action = None
+            return
+
         if game.state == "menu":
+            if "hero_prev" in self.buttons and self.buttons["hero_prev"].collidepoint(pos):
+                game.hero_page = max(0, game.hero_page - 1)
+                return
+            if "hero_next" in self.buttons and self.buttons["hero_next"].collidepoint(pos):
+                game.hero_page += 1
+                return
+
             for hero_id, rect in self.hero_rects.items():
                 if rect.collidepoint(pos):
                     game.selected_hero = hero_id
@@ -384,6 +498,10 @@ class MenuUI:
                 game.start_host_lobby()
             elif "join" in self.buttons and self.buttons["join"].collidepoint(pos):
                 self._join(game)
+            elif "settings" in self.buttons and self.buttons["settings"].collidepoint(pos):
+                game.state = "settings"
+                game.settings_action = None
+                game.settings_message = ""
             return
 
         if game.state == "lobby":
@@ -424,6 +542,13 @@ class MenuUI:
         game.join_lobby(host, port)
 
     def handle_key(self, event, game):
+        if game.state == "settings":
+            if game.settings_action:
+                key_name = pygame.key.name(event.key)
+                if game.set_control(game.settings_action, key_name):
+                    game.settings_action = None
+            return
+
         if game.state == "menu" and game.menu_ip_focus:
             if event.key == pygame.K_BACKSPACE:
                 game.menu_ip = game.menu_ip[:-1]
