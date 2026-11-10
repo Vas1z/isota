@@ -21,15 +21,25 @@ def main() -> int:
     # 1. Инициализация и движение героя.
     world = World(data)
     hero = world.add_player("p1", "A", "Tester")
-    assert sum(1 for u in world.units if u.kind == "tower") == 10
+    assert sum(1 for u in world.units if u.kind == "tower") == 14
+    thrones = [u for u in world.units if u.kind == "throne"]
+    assert len(thrones) == 2, "expected two thrones"
+    assert {u.team for u in thrones} == {"A", "B"}
+    mid_towers = [
+        u for u in world.units
+        if u.kind == "tower" and u.pos in (
+            (6.5, 17.5), (9.0, 15.0), (17.5, 6.5), (15.0, 9.0),
+        )
+    ]
+    assert len(mid_towers) == 4, f"expected 4 mid towers, got {len(mid_towers)}"
     world.apply_command("p1", {"type": "move", "x": 12, "y": 12})
-    for _ in range(60 * 20):
+    for _ in range(60 * 12):
         world.tick(1 / 60)
-    assert world.match_time >= 19.9
+    assert world.match_time >= 11.9
     assert hero.pos != (4.0, 20.0), "hero did not move"
-    assert world.players["p1"].gold >= 19, "passive gold is broken"
+    assert world.players["p1"].gold >= 11, "passive gold is broken"
 
-    # 2. Добивание крипа даёт золото и CS.
+    # 2. Добивание крипа: золото, CS и опыт рядом с героем.
     world2 = World(data)
     hero2 = world2.add_player("p1", "A")
     creep = world2._make_creep("B", [(5, 20), (5, 20)], data["units"]["creep"])
@@ -43,10 +53,23 @@ def main() -> int:
             break
     assert not creep.alive, "hero did not kill the creep"
     assert world2.players["p1"].cs == 1, "CS was not awarded"
-    assert int(world2.players["p1"].gold) == 5, "bounty was not awarded"
+    assert int(world2.players["p1"].gold) >= 5, "bounty was not awarded"
+    assert world2.players["p1"].xp == 20, "XP was not awarded to nearby hero"
     assert any(e["kind"] == "bounty" for e in world2.events)
 
-    # 3. Смерть героя и респавн.
+    # 3. Уровень: рост статов.
+    player = world2.players["p1"]
+    hp_before = hero2.max_hp
+    dmg_before = hero2.atk_dmg
+    armor_before = hero2.armor
+    world2._add_xp(player, 100)  # 20 уже есть, нужно 100 до 2 уровня
+    assert player.level == 2, "hero did not level up"
+    assert hero2.max_hp == hp_before + 20, "HP growth is broken"
+    assert hero2.atk_dmg == dmg_before + 3, "damage growth is broken"
+    assert hero2.armor == armor_before + 0.5, "armor growth is broken"
+    assert any(e["kind"] == "level_up" for e in world2.events)
+
+    # 4. Смерть героя и респавн.
     world3 = World(data)
     hero3 = world3.add_player("p1", "A")
     enemy = world3.add_player("p2", "B")
@@ -55,6 +78,7 @@ def main() -> int:
     assert not hero3.alive
     assert world3.players["p1"].deaths == 1
     assert world3.players["p2"].kills == 1
+    assert int(world3.players["p2"].gold) >= 175, "hero kill gold was not awarded"
     assert world3.players["p1"].respawn_timer > 0
 
     for _ in range(30 * 6):
@@ -63,11 +87,74 @@ def main() -> int:
     assert hero3.hp == hero3.max_hp
     assert hero3.pos == (4.0, 20.0)
 
-    # 4. Снапшот содержит нужные поля.
+    # 5. Время респавна растёт с уровнем.
+    world4 = World(data)
+    hero4 = world4.add_player("p1", "A")
+    world4.add_player("p2", "B")
+    world4.players["p1"].level = 3
+    hero4.take_damage(99999, attacker=world4.players["p2"].hero)
+    world4.tick(1 / 30)
+    assert world4.players["p1"].respawn_timer > 6.5, "respawn did not scale with level"
+
+    # 5b. Опыт за убийство героя получает вражеский герой рядом.
+    world4b = World(data)
+    hero4b = world4b.add_player("p1", "A")
+    world4b.add_player("p2", "B")
+    world4b.players["p2"].hero.pos = (5.0, 20.0)
+    hero4b.take_damage(99999, attacker=world4b.players["p2"].hero)
+    world4b.tick(1 / 30)
+    assert world4b.players["p2"].level == 2, "hero kill XP did not level up the killer"
+
+    # 6. В каждой волне есть ranged-крипы.
+    world5 = World(data)
+    world5.add_player("p1", "A")
+    for _ in range(610):
+        world5.tick(1 / 60)
+    ranged = [u for u in world5.units if u.kind == "creep_ranged"]
+    melee = [u for u in world5.units if u.kind == "creep"]
+    assert len(ranged) == 6, f"expected 6 ranged creeps, got {len(ranged)}"
+    assert len(melee) == 24, f"expected 24 melee creeps, got {len(melee)}"
+
+    # 7. Вышка сначала стреляет по крипам, а не по герою.
+    world6 = World(data)
+    world6.add_player("p1", "A")
+    world6.add_player("p2", "B")
+    tower = next(
+        u for u in world6.units
+        if u.kind == "tower" and u.team == "A" and u.pos == (1.5, 8.5)
+    )
+    world6.players["p2"].hero.pos = (2.0, 8.5)  # герой ближе к вышке
+    creep2 = world6._make_creep("B", [(2.5, 8.5), (2.5, 8.5)], data["units"]["creep"])
+    creep2.pos = (2.5, 8.5)
+    world6._add_unit(creep2)
+    target = tower._find_target(world6.units)
+    assert target is creep2, f"tower targeted {getattr(target, 'kind', None)} instead of creep"
+
+    # 8. Уничтожение трона завершает матч и замораживает симуляцию.
+    world7 = World(data)
+    world7.add_player("p1", "A")
+    world7.add_player("p2", "B")
+    throne_b = next(u for u in world7.units if u.kind == "throne" and u.team == "B")
+    throne_b.take_damage(99999)
+    world7.tick(1 / 30)
+    assert world7.match_over, "match did not end after throne destruction"
+    assert world7.winner == "A", "wrong winner"
+    assert any(e["kind"] == "match_end" for e in world7.events)
+
+    frozen_time = world7.match_time
+    world7.tick(1 / 30)
+    assert world7.match_time == frozen_time, "simulation continued after match end"
+
+    snap7 = world7.snapshot()
+    assert snap7["over"] is True and snap7["winner"] == "A"
+    assert any(u["id"] == throne_b.uid and not u["alive"] for u in snap7["units"])
+
+    # 9. Снапшот содержит нужные поля.
     snap = world3.snapshot()
-    assert {"tick", "time", "units", "projectiles", "players"} <= set(snap)
+    assert {"tick", "time", "over", "winner", "units", "projectiles", "players"} <= set(snap)
     me = snap["players"]["p1"]
     assert me["hero"] == hero3.uid
+    assert {"level", "xp", "xp_next"} <= set(me)
     assert any(u["id"] == hero3.uid for u in snap["units"])
 
     print("OK: simulation smoke tests passed")

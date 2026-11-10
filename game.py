@@ -4,6 +4,7 @@ import sys
 import time
 from collections import deque
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import pygame
@@ -94,6 +95,7 @@ class Game:
         loader.validate(self.data)
 
         self.Grid = Grid
+        self.max_level = int(self.data["hero"].get("progression", {}).get("max_level", 10))
 
         self.cfg = self.data["settings"]
         self.controls = self.data["controls"]
@@ -147,7 +149,12 @@ class Game:
         self.cs = 0
         self.kills = 0
         self.deaths = 0
+        self.level = 1
+        self.xp = 0.0
+        self.xp_next = 100.0
         self.respawn_timer = 0.0
+        self.match_over = False
+        self.winner: Optional[str] = None
 
         self.move_marker: Optional[Tuple[float, float]] = None
         self.attack_marker_uid: Optional[int] = None
@@ -180,6 +187,9 @@ class Game:
         self.show_ui = True
 
         self.ui = UI(self)
+        self.creep_sprites = {}
+        self._sprite_cache = {}
+        self._load_creep_sprites()
         self.console = Console(self)
         self._center_camera_on_team_spawn()
 
@@ -229,6 +239,56 @@ class Game:
         self.net.close()
         raise RuntimeError("server did not send welcome")
 
+    # ---------- спрайты ----------
+    def _load_creep_sprites(self) -> None:
+        assets = Path(__file__).parent / "assets"
+        for team, filename in (
+            ("A", "creep_melee_a.png"),
+            ("B", "creep_melee_b.png"),
+        ):
+            path = assets / filename
+            if not path.exists():
+                continue
+            try:
+                image = pygame.image.load(str(path)).convert_alpha()
+            except (pygame.error, OSError):
+                continue
+
+            # Обрезаем прозрачные поля, чтобы персонаж занимал весь спрайт.
+            bounds = image.get_bounding_rect()
+            if bounds.w > 0 and bounds.h > 0:
+                image = image.subsurface(bounds).copy()
+
+            self.creep_sprites[team] = image
+
+    def reload_sprites(self):
+        self.creep_sprites.clear()
+        self._sprite_cache.clear()
+        self._load_creep_sprites()
+        return sorted(self.creep_sprites)
+
+    def _get_creep_sprite(self, team: str, size: int):
+        key = (team, size)
+        cached = self._sprite_cache.get(key)
+        if cached is not None:
+            return cached
+
+        image = self.creep_sprites.get(team)
+        if image is None:
+            source = self.creep_sprites.get("A") or self.creep_sprites.get("B")
+            if source is None:
+                return None
+            image = source.copy()
+            tint = (255, 140, 140, 255) if team == "B" else (150, 190, 255, 255)
+            image.fill(tint, special_flags=pygame.BLEND_RGBA_MULT)
+
+        width, height = image.get_size()
+        scale = size / max(width, height)
+        new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+        scaled = pygame.transform.smoothscale(image, new_size)
+        self._sprite_cache[key] = scaled
+        return scaled
+
     # ---------- состояние ----------
     def _sync_offline_player(self) -> None:
         if not self.world or not self.player_id:
@@ -240,8 +300,13 @@ class Game:
         self.cs = player.cs
         self.kills = player.kills
         self.deaths = player.deaths
+        self.level = player.level
+        self.xp = player.xp
+        self.xp_next = player.xp_next
         self.respawn_timer = player.respawn_timer
         self.match_time = self.world.match_time
+        self.match_over = self.world.match_over
+        self.winner = self.world.winner
 
     def _sync_offline_world(self) -> None:
         if not self.world:
@@ -306,6 +371,33 @@ class Game:
             self.status_message = f"Вы погибли. Респавн через {event.get('respawn', 0):.1f}с"
         elif kind == "respawn" and event.get("player") == self.player_id:
             self.status_message = ""
+        elif kind == "level_up" and event.get("player") == self.player_id:
+            level = int(event.get("level", 0))
+            self.console.log(f"level up! now level {level}", (180, 230, 130))
+            if self.hero is not None:
+                sx, sy = Grid.to_screen(self.hero.pos[0], self.hero.pos[1])
+                self.floating_texts.append(FloatingText(
+                    text=f"LEVEL {level}",
+                    pos=(sx + random.randint(-15, 15), sy - 45),
+                    color=(180, 240, 120),
+                    lifetime=1.2,
+                    vy=-50,
+                ))
+        elif kind == "match_end":
+            self.match_over = True
+            winner = event.get("winner")
+            self.winner = winner
+            labels = {"A": "сил света", "B": "сил тьмы"}
+            enemy = "B" if self.team == "A" else "A"
+            if winner == self.team:
+                text = f"ПОБЕДА! Трон {labels.get(enemy, 'врага')} разрушен"
+                color = (140, 255, 160)
+            else:
+                text = "ПОРАЖЕНИЕ. Ваш трон пал"
+                color = (255, 120, 120)
+            # Экран матча рисует UI, поэтому старый статус убираем.
+            self.status_message = ""
+            self.console.log(text, color)
 
     # ---------- сетевые снапшоты ----------
     def _update_net_view(self) -> None:
@@ -323,8 +415,13 @@ class Game:
             self.cs = int(me.get("cs", 0))
             self.kills = int(me.get("kills", 0))
             self.deaths = int(me.get("deaths", 0))
+            self.level = int(me.get("level", 1))
+            self.xp = float(me.get("xp", 0.0))
+            self.xp_next = float(me.get("xp_next", 100.0))
             self.respawn_timer = float(me.get("respawn", 0.0))
         self.match_time = float(latest.get("time", 0.0))
+        self.match_over = bool(latest.get("over", False))
+        self.winner = latest.get("winner")
 
         render_t = time.monotonic() - INTERP_DELAY
         s0, s1 = self._pick_snapshots(render_t)
@@ -442,6 +539,9 @@ class Game:
             self.world.apply_command(self.player_id, cmd)
 
     def command_click(self) -> None:
+        if self.match_over:
+            return
+
         mx, my = pygame.mouse.get_pos()
         wx = mx + self.camera.x
         wy = my + self.camera.y
@@ -468,6 +568,9 @@ class Game:
                 self._send_cmd({"type": "move", "x": gx, "y": gy})
 
     def command_stop(self) -> None:
+        if self.match_over:
+            return
+
         self.move_marker = None
         self.attack_marker_uid = None
         self._send_cmd({"type": "stop"})
@@ -643,25 +746,119 @@ class Game:
     def draw_unit(self, surface, unit: Unit):
         sx, sy = Grid.to_screen(unit.pos[0], unit.pos[1])
         sx, sy = self.camera.apply(sx, sy)
-        r = (14 if unit.kind == "hero" else 9 if unit.kind == "creep" else 16) * Grid.zoom * 0.7
+        if unit.kind == "hero":
+            base_r = 14
+        elif unit.kind == "tower":
+            base_r = 16
+        elif unit.kind == "throne":
+            base_r = 30
+        elif unit.kind == "creep_ranged":
+            base_r = 8
+        else:
+            base_r = 9
+        r = base_r * Grid.zoom * 0.7
+
         c = self.colors
         if unit.kind == "hero":
             color = c["hero"]
         elif unit.kind == "tower":
             color = c["tower_a"] if unit.team == "A" else c["tower_b"]
+        elif unit.kind == "throne":
+            color = c["base_a"] if unit.team == "A" else c["base_b"]
+            if not unit.alive:
+                color = (70, 70, 70)
+        elif unit.kind == "creep_ranged":
+            color = c.get("creep_ranged_a", c["creep_a"]) if unit.team == "A" else c.get("creep_ranged_b", c["creep_b"])
         else:
             color = c["creep_a"] if unit.team == "A" else c["creep_b"]
 
-        pygame.draw.circle(surface, (0, 0, 0), (int(sx), int(sy) + 3), int(r))
-        pygame.draw.circle(surface, color, (int(sx), int(sy)), int(r))
+        sprite_rect = None
+        if unit.kind in ("creep", "creep_ranged"):
+            sprite_size = int((22 if unit.kind == "creep" else 18) * Grid.zoom)
+            sprite = self._get_creep_sprite(unit.team, sprite_size)
+            if sprite is not None:
+                sw, sh = sprite.get_size()
+                pygame.draw.ellipse(
+                    surface, (0, 0, 0, 95),
+                    (
+                        int(sx - sw * 0.42),
+                        int(sy + sprite_size * 0.02),
+                        int(sw * 0.84),
+                        max(4, int(sprite_size * 0.22)),
+                    ),
+                )
+                sprite_rect = sprite.get_rect(
+                    midbottom=(int(sx), int(sy + sprite_size * 0.18))
+                )
+                surface.blit(sprite, sprite_rect)
 
-        bw, bh = r * 2, 4
-        bx = sx - r
-        by = sy - r - 10
+        if sprite_rect is None:
+            if unit.kind == "throne":
+                self._draw_throne(surface, unit, sx, sy, r, color)
+            else:
+                pygame.draw.circle(surface, (0, 0, 0), (int(sx), int(sy) + 3), int(r))
+                pygame.draw.circle(surface, color, (int(sx), int(sy)), int(r))
+
+            bw, bh = r * 2, 4
+            bx = sx - r
+            by = sy - r - 10
+        else:
+            bw = sprite_rect.width * 0.8
+            bh = 4
+            bx = sprite_rect.centerx - bw / 2
+            by = sprite_rect.top - 8
+
         pygame.draw.rect(surface, c["hp_bg"], (int(bx), int(by), int(bw), bh))
         frac = max(0.0, min(1.0, unit.hp / max(1.0, unit.max_hp)))
         col = c["hp_a"] if unit.team == "A" else c["hp_b"]
         pygame.draw.rect(surface, col, (int(bx), int(by), int(bw * frac), bh))
+
+        if unit.kind == "throne":
+            if unit.alive:
+                label_text = "СВЕТ" if unit.team == "A" else "ТЬМА"
+                label_color = (255, 255, 255)
+            else:
+                label_text = "РУИНЫ"
+                label_color = (170, 170, 170)
+            label = self.ui.small_font.render(label_text, True, label_color)
+            surface.blit(label, (int(sx - label.get_width() // 2), int(by - 15)))
+
+    def _draw_throne(self, surface, unit: Unit, sx, sy, r, color):
+        r = int(r)
+        # Тень под троном.
+        pygame.draw.ellipse(
+            surface, (0, 0, 0, 90),
+            (int(sx - r * 0.9), int(sy - r * 0.25 + 8), int(r * 1.8), int(r * 0.7)),
+        )
+
+        points = [
+            (int(sx), int(sy - r)),
+            (int(sx + r * 0.8), int(sy)),
+            (int(sx), int(sy + r)),
+            (int(sx - r * 0.8), int(sy)),
+        ]
+        pygame.draw.polygon(surface, color, points)
+        outline = (255, 215, 0) if unit.alive else (105, 105, 105)
+        pygame.draw.polygon(surface, outline, points, max(2, int(Grid.zoom)))
+
+        inner = [
+            (int(sx), int(sy - r * 0.55)),
+            (int(sx + r * 0.42), int(sy)),
+            (int(sx), int(sy + r * 0.55)),
+            (int(sx - r * 0.42), int(sy)),
+        ]
+        brighter = tuple(min(255, int(v) + 35) for v in color)
+        pygame.draw.polygon(surface, brighter, inner)
+
+        if unit.alive:
+            crown = [
+                (int(sx - r * 0.24), int(sy - r * 0.55)),
+                (int(sx - r * 0.13), int(sy - r * 0.82)),
+                (int(sx), int(sy - r * 0.62)),
+                (int(sx + r * 0.13), int(sy - r * 0.82)),
+                (int(sx + r * 0.24), int(sy - r * 0.55)),
+            ]
+            pygame.draw.polygon(surface, (255, 215, 0), crown)
 
     def draw_world(self, surface):
         self.draw_map(surface)
@@ -697,7 +894,7 @@ class Game:
                 pygame.draw.circle(surface, (255, 80, 80), (int(sx), int(sy)), 20, 2)
 
         for unit in sorted(self.units, key=lambda u: u.pos[1]):
-            if unit.alive:
+            if unit.alive or unit.kind == "throne":
                 self.draw_unit(surface, unit)
 
         for proj in self.projectiles:
@@ -717,6 +914,9 @@ class Game:
         if self.show_ui:
             self.ui.draw_minimap(self.screen)
             self.ui.draw_hud(self.screen)
+
+        if self.match_over:
+            self.ui.draw_match_end(self.screen)
 
         # Консоль рисуется поверх всего, даже если HUD выключен.
         if self.console.open:

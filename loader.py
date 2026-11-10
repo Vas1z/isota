@@ -33,3 +33,5 @@ def validate(data: dict) -> None:
         assert len(path) >= 2, f"lane {lane} needs >=2 points"
     for t in data["map"]["towers"]:
         assert t["team"] in ("A", "B"), "tower.team must be A or B"
+    for t in data["map"].get("thrones", []):
+        assert t["team"] in ("A", "B"), "throne.team must be A or B"

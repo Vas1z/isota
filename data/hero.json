@@ -11,5 +11,16 @@
     "radius": 0.35,
     "projectile_speed": 8.0,
     "armor": 5
+  },
+  "progression": {
+    "max_level": 10,
+    "xp_base": 100,
+    "xp_step": 50,
+    "hp_per_level": 20,
+    "damage_per_level": 3,
+    "armor_per_level": 0.5,
+    "respawn_per_level": 1.0,
+    "hero_kill_gold_base": 150,
+    "hero_kill_gold_per_level": 25
   }
 }

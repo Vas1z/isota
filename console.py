@@ -50,6 +50,10 @@ class Console:
             "status": self._cmd_status,
             "players": self._cmd_players,
             "snap": self._cmd_snap,
+            "thrones": self._cmd_thrones,
+            "match": self._cmd_match,
+            "reload_sprites": self._cmd_reload_sprites,
+            "sprites": self._cmd_reload_sprites,
             "zoom": self._cmd_zoom,
             "center": self._cmd_center,
             "cam": self._cmd_center,
@@ -73,6 +77,9 @@ class Console:
             "status": "режим, игрок, время, FPS, ping",
             "players": "список игроков и их золото/CS/K/D",
             "snap": "последний снапшот сервера",
+            "thrones": "HP и состояние обоих тронов",
+            "match": "состояние матча: идёт/победа/поражение",
+            "reload_sprites": "перечитать assets/*.png без перезапуска",
             "zoom <0.5..8>": "масштаб карты",
             "center": "центрировать камеру на герое",
             "fullscreen [on|off]": "полноэкранный режим",
@@ -276,6 +283,7 @@ class Console:
             self.log(
                 f"hero pos=({hero.pos[0]:.2f}, {hero.pos[1]:.2f}) "
                 f"hp={hero.hp:.0f}/{hero.max_hp:.0f} alive={hero.alive} "
+                f"level={game.level} xp={game.xp:.0f}/{game.xp_next:.0f} "
                 f"gold={game.gold} cs={game.cs} k/d={game.kills}/{game.deaths}"
             )
         if game.net_mode:
@@ -310,6 +318,7 @@ class Console:
             p = players[pid]
             self.log(
                 f"{pid} team={p.get('team', '?')} name={p.get('name', '')!r} "
+                f"lvl={p.get('level', 1)} xp={float(p.get('xp', 0)):.0f}/{float(p.get('xp_next', 100)):.0f} "
                 f"gold={p.get('gold', 0)} cs={p.get('cs', 0)} "
                 f"k/d={p.get('kills', 0)}/{p.get('deaths', 0)} "
                 f"respawn={float(p.get('respawn', 0)):.1f}s"
@@ -332,6 +341,32 @@ class Console:
                 f"world: tick={game.world.tick_count} time={game.world.match_time:.2f} "
                 f"units={len(game.world.units)} projectiles={len(game.world.projectiles)}"
             )
+
+    def _cmd_reload_sprites(self, args) -> None:
+        teams = self.game.reload_sprites()
+        if teams:
+            self.log(f"sprites loaded for teams: {', '.join(teams)}", (150, 220, 150))
+        else:
+            self.log("sprites: no files in assets/ (fallback circles)", (200, 200, 120))
+
+    def _cmd_thrones(self, args) -> None:
+        thrones = [u for u in self.game.units if u.kind == "throne"]
+        if not thrones:
+            self.log("thrones: no data", (200, 200, 120))
+            return
+        labels = {"A": "СВЕТ", "B": "ТЬМА"}
+        for unit in thrones:
+            self.log(
+                f"{labels.get(unit.team, unit.team)} hp={unit.hp:.0f}/{unit.max_hp:.0f} "
+                f"alive={unit.alive}"
+            )
+
+    def _cmd_match(self, args) -> None:
+        game = self.game
+        if game.match_over:
+            self.log(f"match: over, winner={game.winner}, time={game.match_time:.1f}s")
+        else:
+            self.log(f"match: in progress, time={game.match_time:.1f}s")
 
     def _cmd_zoom(self, args) -> None:
         if not args:

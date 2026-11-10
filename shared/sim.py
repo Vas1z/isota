@@ -32,6 +32,7 @@ class Unit:
     radius: float = 0.35
     projectile_speed: float = 8.0
     gold_bounty: int = 0
+    xp_bounty: int = 0
     armor: float = 0.0
     waypoints: List[Tuple[float, float]] = field(default_factory=list)
     wp_index: int = 0
@@ -47,6 +48,10 @@ class Unit:
     # ----- обновление -----
     def update(self, dt: float, units: List["Unit"], projectiles: List["Projectile"]) -> None:
         if not self.alive:
+            return
+
+        # Трон — статичная цель, которая не двигается и не атакует.
+        if self.kind == "throne":
             return
 
         self.atk_timer = max(0.0, self.atk_timer - dt)
@@ -113,16 +118,35 @@ class Unit:
         ))
 
     def _find_target(self, units: List["Unit"]) -> Optional["Unit"]:
-        best = None
-        best_d = self.atk_range + 1.5
-        for u in units:
-            if u is self or not u.alive or u.team == self.team:
-                continue
-            d = dist(self.pos, u.pos)
-            if d < best_d:
-                best_d = d
-                best = u
-        return best
+        acquire = self.atk_range + 1.5
+        candidates = [
+            u for u in units
+            if u is not self and u.alive and u.team != self.team
+            and dist(self.pos, u.pos) <= acquire
+        ]
+        if not candidates:
+            return None
+
+        def nearest(pool: List["Unit"]) -> "Unit":
+            return min(pool, key=lambda u: dist(self.pos, u.pos))
+
+        if self.kind == "tower":
+            # Как в Dota: вышка сначала стреляет по крипам, и только если их нет —
+            # по героям/другим юнитам.
+            creeps = [u for u in candidates if u.kind in ("creep", "creep_ranged")]
+            return nearest(creeps or candidates)
+
+        if self.kind in ("creep", "creep_ranged"):
+            # Крипы дерутся с крипами, затем с героями, затем с вышками.
+            creeps = [u for u in candidates if u.kind in ("creep", "creep_ranged")]
+            if creeps:
+                return nearest(creeps)
+            heroes = [u for u in candidates if u.kind == "hero"]
+            if heroes:
+                return nearest(heroes)
+            return nearest(candidates)
+
+        return nearest(candidates)
 
     # ----- коллизии -----
     def resolve_collision(self, other: "Unit") -> None:
@@ -137,12 +161,15 @@ class Unit:
             dx = (self.pos[0] - other.pos[0]) / d
             dy = (self.pos[1] - other.pos[1]) / d
 
-            if self.kind != "tower" and other.kind != "tower":
+            self_fixed = self.kind in ("tower", "throne")
+            other_fixed = other.kind in ("tower", "throne")
+
+            if not self_fixed and not other_fixed:
                 self.pos = (self.pos[0] + dx * overlap * 0.5, self.pos[1] + dy * overlap * 0.5)
                 other.pos = (other.pos[0] - dx * overlap * 0.5, other.pos[1] - dy * overlap * 0.5)
-            elif self.kind != "tower":
+            elif not self_fixed:
                 self.pos = (self.pos[0] + dx * overlap, self.pos[1] + dy * overlap)
-            elif other.kind != "tower":
+            elif not other_fixed:
                 other.pos = (other.pos[0] - dx * overlap, other.pos[1] - dy * overlap)
 
     # ----- урон -----
@@ -205,6 +232,9 @@ class PlayerState:
     cs: int = 0
     kills: int = 0
     deaths: int = 0
+    level: int = 1
+    xp: float = 0.0
+    xp_next: float = 100.0
     respawn_timer: float = 0.0
 
 
@@ -238,14 +268,35 @@ class World:
         self.match_time = 0.0
         self.tick_count = 0
         self._next_uid = 1
+        self.match_over = False
+        self.winner = None
 
         self.creep_timer = 0.0
         self.creep_interval = self.cfg["timing"]["creep_interval"]
         self.creeps_per_wave = self.cfg["timing"].get("creeps_per_wave", 5)
+        self.ranged_creeps = int(self.cfg["timing"].get("ranged_creeps", 1))
         self.respawn_time = self.cfg["timing"].get("respawn_time", 5.0)
+        self.xp_radius = float(self.cfg["timing"].get("xp_radius", 8.0))
+
+        progression = self.hero_cfg.get("progression", {})
+        self.max_level = int(progression.get("max_level", 10))
+        self.xp_base = float(progression.get("xp_base", 100))
+        self.xp_step = float(progression.get("xp_step", 50))
+        self.hp_growth = float(progression.get("hp_per_level", 20))
+        self.dmg_growth = float(progression.get("damage_per_level", 3))
+        self.armor_growth = float(progression.get("armor_per_level", 0.5))
+        self.respawn_per_level = float(progression.get("respawn_per_level", 1.0))
+        self.hero_kill_gold_base = float(progression.get("hero_kill_gold_base", 150))
+        self.hero_kill_gold_per_level = float(progression.get("hero_kill_gold_per_level", 25))
 
         for t in self.map_cfg["towers"]:
             self._add_unit(self._make_tower(t["team"], t["pos"], self.units_cfg["tower"]))
+
+        thrones = self.map_cfg.get("thrones")
+        if thrones is None:
+            thrones = [{"team": team, "pos": pos} for team, pos in self.bases.items()]
+        for t in thrones:
+            self._add_unit(self._make_throne(t["team"], t["pos"], self.units_cfg["throne"]))
 
     # ----- сущности -----
     def new_uid(self) -> int:
@@ -280,10 +331,30 @@ class World:
             radius=tpl["radius"],
             projectile_speed=tpl["projectile_speed"],
             gold_bounty=tpl.get("gold_bounty", 0),
+            xp_bounty=tpl.get("xp_bounty", 0),
             proj_color=(255, 120, 50) if team == "B" else (255, 160, 80),
         )
 
-    def _make_creep(self, team: str, lane_path, tpl: dict, rank: int = 0) -> Unit:
+    def _make_throne(self, team: str, pos, tpl: dict) -> Unit:
+        return Unit(
+            uid=0,
+            team=team,
+            kind="throne",
+            pos=tuple(pos),
+            hp=tpl["hp"],
+            max_hp=tpl["hp"],
+            speed=0.0,
+            atk_range=0.0,
+            atk_dmg=0.0,
+            atk_cd=1.0,
+            radius=tpl["radius"],
+            projectile_speed=0.0,
+            armor=tpl.get("armor", 0.0),
+            proj_color=(255, 120, 50) if team == "B" else (255, 160, 80),
+        )
+
+    def _make_creep(self, team: str, lane_path, tpl: dict, rank: int = 0,
+                    kind: str = "creep") -> Unit:
         wps = [(float(x), float(y)) for x, y in lane_path]
         if team == "B":
             wps = list(reversed(wps))
@@ -301,7 +372,7 @@ class World:
         return Unit(
             uid=0,
             team=team,
-            kind="creep",
+            kind=kind,
             pos=tuple(start),
             hp=tpl["hp"],
             max_hp=tpl["hp"],
@@ -312,6 +383,7 @@ class World:
             radius=tpl["radius"],
             projectile_speed=tpl["projectile_speed"],
             gold_bounty=tpl.get("gold_bounty", 0),
+            xp_bounty=tpl.get("xp_bounty", 0),
             waypoints=wps,
             wp_index=1,
             proj_color=(255, 240, 150),
@@ -355,6 +427,7 @@ class World:
             hero=hero,
             name=name,
             slot=slot,
+            xp_next=self._xp_for_level(1),
         )
         return hero
 
@@ -402,6 +475,9 @@ class World:
 
     # ----- тик -----
     def tick(self, dt: float) -> None:
+        if self.match_over:
+            return
+
         dt = max(0.0, min(dt, 0.1))
         self.match_time += dt
         self.tick_count += 1
@@ -445,23 +521,32 @@ class World:
                 continue
             unit.death_processed = True
 
-            if unit.kind == "hero":
+            if unit.kind == "throne":
+                self._on_throne_death(unit)
+            elif unit.kind == "hero":
                 self._on_hero_death(unit)
-            elif unit.gold_bounty > 0:
+            elif unit.gold_bounty > 0 or unit.xp_bounty > 0:
                 self._on_unit_death(unit)
 
         # Респавн героев.
         self._update_respawns(dt)
 
-        # Убираем мёртвых не-героев; мёртвые герои остаются для респавна.
-        self.units = [u for u in self.units if u.alive or u.kind == "hero"]
+        # Мёртвые герои остаются для респавна, мёртвые троны — как руины.
+        self.units = [u for u in self.units if u.alive or u.kind in ("hero", "throne")]
 
     def _spawn_creep_wave(self) -> None:
+        ranged_from = max(0, self.creeps_per_wave - self.ranged_creeps)
         for lane_name in self.lanes:
             path = self.lanes[lane_name]
             for team in ("A", "B"):
                 for i in range(self.creeps_per_wave):
-                    self._add_unit(self._make_creep(team, path, self.units_cfg["creep"], rank=i))
+                    if i >= ranged_from:
+                        tpl = self.units_cfg.get("creep_ranged", self.units_cfg["creep"])
+                        kind = "creep_ranged"
+                    else:
+                        tpl = self.units_cfg["creep"]
+                        kind = "creep"
+                    self._add_unit(self._make_creep(team, path, tpl, rank=i, kind=kind))
 
     def _on_hero_death(self, unit: Unit) -> None:
         player = self.players.get(unit.owner_player)
@@ -469,12 +554,37 @@ class World:
             return
 
         player.deaths += 1
-        player.respawn_timer = self.respawn_time
+        # В Dota время респавна растёт с уровнем.
+        player.respawn_timer = self.respawn_time + (player.level - 1) * self.respawn_per_level
 
         killer = unit.last_hit_by
         if killer and killer.owner_player in self.players:
             if killer.owner_player != unit.owner_player:
-                self.players[killer.owner_player].kills += 1
+                killer_player = self.players[killer.owner_player]
+                killer_player.kills += 1
+
+                # Золото за убийство героя получает добивший.
+                hero_gold = int(
+                    self.hero_kill_gold_base
+                    + player.level * self.hero_kill_gold_per_level
+                )
+                killer_player.gold += hero_gold
+                self.events.append({
+                    "kind": "bounty",
+                    "player": killer_player.player_id,
+                    "unit": unit.uid,
+                    "amount": hero_gold,
+                    "x": unit.pos[0],
+                    "y": unit.pos[1],
+                })
+
+        # Опыт за убийство героя получают все вражеские герои рядом.
+        hero_xp = 100 + player.level * 20
+        for other in self.players.values():
+            if other.team == player.team or not other.hero.alive:
+                continue
+            if dist(other.hero.pos, unit.pos) <= self.xp_radius:
+                self._add_xp(other, hero_xp)
 
         self.events.append({
             "kind": "hero_death",
@@ -485,9 +595,21 @@ class World:
             "respawn": player.respawn_timer,
         })
 
+    def _on_throne_death(self, unit: Unit) -> None:
+        if self.match_over:
+            return
+        self.match_over = True
+        self.winner = "B" if unit.team == "A" else "A"
+        self.events.append({
+            "kind": "match_end",
+            "winner": self.winner,
+            "x": unit.pos[0],
+            "y": unit.pos[1],
+        })
+
     def _on_unit_death(self, unit: Unit) -> None:
         killer = unit.last_hit_by
-        if killer and killer.owner_player in self.players:
+        if killer and killer.owner_player in self.players and unit.gold_bounty > 0:
             player = self.players[killer.owner_player]
             player.gold += unit.gold_bounty
             player.cs += 1
@@ -500,6 +622,50 @@ class World:
                 "y": unit.pos[1],
             })
         unit.gold_bounty = 0
+        self._award_xp(unit)
+
+    def _award_xp(self, unit: Unit) -> None:
+        """Опыт за смерть юнита получают все вражеские герои рядом."""
+        xp = unit.xp_bounty
+        if xp <= 0:
+            return
+
+        for player in self.players.values():
+            if player.team == unit.team or not player.hero.alive:
+                continue
+            if dist(player.hero.pos, unit.pos) <= self.xp_radius:
+                self._add_xp(player, xp)
+
+        unit.xp_bounty = 0
+
+    def _xp_for_level(self, level: int) -> float:
+        return self.xp_base + (level - 1) * self.xp_step
+
+    def _add_xp(self, player: PlayerState, amount: float) -> None:
+        if amount <= 0 or player.level >= self.max_level:
+            return
+
+        player.xp += amount
+
+        while player.level < self.max_level and player.xp >= player.xp_next:
+            player.xp -= player.xp_next
+            player.level += 1
+            player.xp_next = self._xp_for_level(player.level)
+
+            hero = player.hero
+            hero.max_hp += self.hp_growth
+            hero.hp += self.hp_growth
+            hero.atk_dmg += self.dmg_growth
+            hero.armor += self.armor_growth
+
+            self.events.append({
+                "kind": "level_up",
+                "player": player.player_id,
+                "level": player.level,
+            })
+
+        if player.level >= self.max_level:
+            player.xp = min(player.xp, player.xp_next)
 
     def _update_respawns(self, dt: float) -> None:
         for player in self.players.values():
@@ -570,6 +736,9 @@ class World:
                 "cs": p.cs,
                 "kills": p.kills,
                 "deaths": p.deaths,
+                "level": p.level,
+                "xp": round(p.xp, 1),
+                "xp_next": round(p.xp_next, 1),
                 "respawn": round(p.respawn_timer, 2),
                 "hero": p.hero.uid if p.hero else None,
             }
@@ -579,6 +748,8 @@ class World:
         return {
             "tick": self.tick_count,
             "time": round(self.match_time, 3),
+            "over": self.match_over,
+            "winner": self.winner,
             "units": units,
             "projectiles": projectiles,
             "players": players,

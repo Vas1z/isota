@@ -28,6 +28,7 @@ class UI:
         self.font = pygame.font.SysFont("consolas", 14)
         self.small_font = pygame.font.SysFont("consolas", 10)
         self.big_font = pygame.font.SysFont("consolas", 20, bold=True)
+        self.huge_font = pygame.font.SysFont("consolas", 46, bold=True)
         self.gold_font = pygame.font.SysFont("consolas", 24, bold=True)
         self.cs_font = pygame.font.SysFont("consolas", 18, bold=True)
         self.popup_font = pygame.font.SysFont("consolas", 16, bold=True)
@@ -83,6 +84,10 @@ class UI:
             sx, sy = int(mx + px), int(my + py)
             if u.kind == "hero":
                 pygame.draw.circle(surface, self.mm_colors["hero"], (sx, sy), 4)
+            elif u.kind == "throne":
+                col = self.colors["base_a"] if u.team == "A" else self.colors["base_b"]
+                pygame.draw.rect(surface, col, (sx - 4, sy - 4, 8, 8))
+                pygame.draw.rect(surface, (255, 215, 0), (sx - 4, sy - 4, 8, 8), 1)
             elif u.kind == "tower":
                 col = self.mm_colors["tower_a"] if u.team == "A" else self.mm_colors["tower_b"]
                 pygame.draw.rect(surface, col, (sx - 2, sy - 2, 4, 4))
@@ -181,7 +186,7 @@ class UI:
         status = getattr(self.game, "status_message", "")
         if status:
             status_surf = self.font.render(status, True, (225, 225, 225))
-            surface.blit(status_surf, (16, sh - 40))
+            surface.blit(status_surf, (16, 42))
 
         self.draw_hero_panel(surface)
 
@@ -221,6 +226,17 @@ class UI:
         pygame.draw.rect(surface, self.colors["hero"], icon_rect, border_radius=4)
         pygame.draw.rect(surface, (0, 0, 0), icon_rect, 2, border_radius=4)
 
+        # Бейдж уровня на иконке героя.
+        level = int(getattr(self.game, "level", 1))
+        badge_center = (px + 57, py + 62)
+        pygame.draw.circle(surface, (15, 20, 28), badge_center, 11)
+        pygame.draw.circle(surface, (255, 215, 0), badge_center, 11, 2)
+        lvl_surf = self.small_font.render(str(level), True, (255, 255, 255))
+        surface.blit(lvl_surf, (
+            badge_center[0] - lvl_surf.get_width() // 2,
+            badge_center[1] - lvl_surf.get_height() // 2,
+        ))
+
         bar_x = px + 75
         bar_y = py + 15
         bar_w = 330
@@ -235,6 +251,20 @@ class UI:
         hp_surf = self.stat_font.render(hp_text, True, (255, 255, 255))
         surface.blit(hp_surf, (bar_x + bar_w // 2 - hp_surf.get_width() // 2, bar_y + 4))
 
+        # Полоска опыта.
+        xp_y = bar_y + bar_h + 4
+        xp_h = 5
+        pygame.draw.rect(surface, (30, 30, 30), (bar_x, xp_y, bar_w, xp_h), border_radius=2)
+        xp = float(getattr(self.game, "xp", 0.0))
+        xp_next = max(1.0, float(getattr(self.game, "xp_next", 100.0)))
+        xp_frac = max(0.0, min(1.0, xp / xp_next))
+        if level >= int(getattr(self.game, "max_level", 10)):
+            xp_frac = 1.0
+        pygame.draw.rect(
+            surface, (110, 150, 255),
+            (bar_x, xp_y, int(bar_w * xp_frac), xp_h), border_radius=2,
+        )
+
         stats = [
             ("Урон", str(int(hero.atk_dmg)), (255, 100, 100)),
             ("Скор.", str(int(hero.speed * 10)), (100, 200, 255)),
@@ -242,12 +272,46 @@ class UI:
         ]
 
         stat_x = bar_x
-        stat_y = py + 45
+        stat_y = py + 47
 
         for i, (label, value, color) in enumerate(stats):
             pygame.draw.circle(surface, color, (stat_x + 8 + i * 110, stat_y + 8), 6)
             text = self.stat_font.render(f"{label}: {value}", True, (200, 200, 200))
             surface.blit(text, (stat_x + 20 + i * 110, stat_y))
+
+    def draw_match_end(self, surface):
+        sw, sh = surface.get_size()
+        overlay = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 190))
+        surface.blit(overlay, (0, 0))
+
+        winner = getattr(self.game, "winner", None)
+        team = getattr(self.game, "team", "A")
+        labels = {"A": "сил света", "B": "сил тьмы"}
+        enemy = "B" if team == "A" else "A"
+
+        if winner == team:
+            title = "ПОБЕДА"
+            subtitle = f"Трон {labels.get(enemy, 'врага')} разрушен"
+            color = (140, 255, 160)
+        elif winner is not None:
+            title = "ПОРАЖЕНИЕ"
+            subtitle = "Ваш трон пал"
+            color = (255, 120, 120)
+        else:
+            title = "МАТЧ ОКОНЧЕН"
+            subtitle = ""
+            color = (230, 230, 230)
+
+        title_surf = self.huge_font.render(title, True, color)
+        surface.blit(title_surf, (sw // 2 - title_surf.get_width() // 2, sh // 2 - 70))
+
+        if subtitle:
+            sub_surf = self.big_font.render(subtitle, True, (235, 235, 235))
+            surface.blit(sub_surf, (sw // 2 - sub_surf.get_width() // 2, sh // 2 + 5))
+
+        hint = self.font.render("Esc — выход, ~ — консоль", True, (190, 190, 190))
+        surface.blit(hint, (sw // 2 - hint.get_width() // 2, sh // 2 + 45))
 
     def draw_floating_texts(self, surface):
         for ft in self.game.floating_texts:
