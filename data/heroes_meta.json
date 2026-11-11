@@ -1,0 +1,750 @@
+{
+  "knight": {
+    "coefficient": 0.9,
+    "attack_point": 0.35,
+    "backswing": 0.3,
+    "innate": {
+      "name": "Клятва щита",
+      "desc": "Каждый 8-й полученный удар режется на 50%.",
+      "type": "first_hit_block",
+      "value": 0.5
+    },
+    "talents": {
+      "10": [
+        {
+          "name": "Сэр Альдрик: прилив str",
+          "desc": "+8 к основному атрибуту (str).",
+          "effect": {
+            "type": "stat",
+            "stat": "str",
+            "value": 8
+          }
+        },
+        {
+          "name": "Сэр Альдрик: запас сил",
+          "desc": "+150 к максимальному HP.",
+          "effect": {
+            "type": "hp",
+            "value": 150
+          }
+        }
+      ],
+      "15": [
+        {
+          "name": "Сэр Альдрик: оберег",
+          "desc": "+10% сопротивления магии.",
+          "effect": {
+            "type": "magic_resist",
+            "value": 0.1
+          }
+        },
+        {
+          "name": "Сэр Альдрик: ярость",
+          "desc": "+15% скорости атаки.",
+          "effect": {
+            "type": "attack_speed",
+            "value": 0.15
+          }
+        }
+      ],
+      "20": [
+        {
+          "name": "Сэр Альдрик: усиление чар",
+          "desc": "+20% урона способностей.",
+          "effect": {
+            "type": "spell_amp",
+            "value": 0.2
+          }
+        },
+        {
+          "name": "Сэр Альдрик: точный удар",
+          "desc": "+25% шанса критического удара.",
+          "effect": {
+            "type": "crit",
+            "value": 0.25
+          }
+        }
+      ]
+    }
+  },
+  "archer": {
+    "coefficient": 1.0,
+    "attack_point": 0.45,
+    "backswing": 0.25,
+    "innate": {
+      "name": "Тень листвы",
+      "desc": "+10% уклонения.",
+      "type": "evasion",
+      "value": 0.1
+    },
+    "talents": {
+      "10": [
+        {
+          "name": "Лира: прилив agi",
+          "desc": "+8 к основному атрибуту (agi).",
+          "effect": {
+            "type": "stat",
+            "stat": "agi",
+            "value": 8
+          }
+        },
+        {
+          "name": "Лира: запас сил",
+          "desc": "+150 к максимальному HP.",
+          "effect": {
+            "type": "hp",
+            "value": 150
+          }
+        }
+      ],
+      "15": [
+        {
+          "name": "Лира: оберег",
+          "desc": "+10% сопротивления магии.",
+          "effect": {
+            "type": "magic_resist",
+            "value": 0.1
+          }
+        },
+        {
+          "name": "Лира: ярость",
+          "desc": "+15% скорости атаки.",
+          "effect": {
+            "type": "attack_speed",
+            "value": 0.15
+          }
+        }
+      ],
+      "20": [
+        {
+          "name": "Лира: усиление чар",
+          "desc": "+20% урона способностей.",
+          "effect": {
+            "type": "spell_amp",
+            "value": 0.2
+          }
+        },
+        {
+          "name": "Лира: точный удар",
+          "desc": "+25% шанса критического удара.",
+          "effect": {
+            "type": "crit",
+            "value": 0.25
+          }
+        }
+      ]
+    }
+  },
+  "pyromancer": {
+    "coefficient": 0.85,
+    "attack_point": 0.45,
+    "backswing": 0.25,
+    "innate": {
+      "name": "Тлеющий след",
+      "desc": "Способности поджигают цель на 10 урона за 3 секунды.",
+      "type": "spell_burn",
+      "value": 10
+    },
+    "talents": {
+      "10": [
+        {
+          "name": "Игнис: прилив int",
+          "desc": "+8 к основному атрибуту (int).",
+          "effect": {
+            "type": "stat",
+            "stat": "int",
+            "value": 8
+          }
+        },
+        {
+          "name": "Игнис: запас сил",
+          "desc": "+150 к максимальному HP.",
+          "effect": {
+            "type": "hp",
+            "value": 150
+          }
+        }
+      ],
+      "15": [
+        {
+          "name": "Игнис: оберег",
+          "desc": "+10% сопротивления магии.",
+          "effect": {
+            "type": "magic_resist",
+            "value": 0.1
+          }
+        },
+        {
+          "name": "Игнис: ярость",
+          "desc": "+15% скорости атаки.",
+          "effect": {
+            "type": "attack_speed",
+            "value": 0.15
+          }
+        }
+      ],
+      "20": [
+        {
+          "name": "Игнис: усиление чар",
+          "desc": "+20% урона способностей.",
+          "effect": {
+            "type": "spell_amp",
+            "value": 0.2
+          }
+        },
+        {
+          "name": "Игнис: точный удар",
+          "desc": "+25% шанса критического удара.",
+          "effect": {
+            "type": "crit",
+            "value": 0.25
+          }
+        }
+      ]
+    }
+  },
+  "frost_mage": {
+    "coefficient": 0.85,
+    "attack_point": 0.45,
+    "backswing": 0.25,
+    "innate": {
+      "name": "Вечная мерзлота",
+      "desc": "Замедления длятся на 1 секунду дольше.",
+      "type": "slow_duration",
+      "value": 1.0
+    },
+    "talents": {
+      "10": [
+        {
+          "name": "Мира: прилив int",
+          "desc": "+8 к основному атрибуту (int).",
+          "effect": {
+            "type": "stat",
+            "stat": "int",
+            "value": 8
+          }
+        },
+        {
+          "name": "Мира: запас сил",
+          "desc": "+150 к максимальному HP.",
+          "effect": {
+            "type": "hp",
+            "value": 150
+          }
+        }
+      ],
+      "15": [
+        {
+          "name": "Мира: оберег",
+          "desc": "+10% сопротивления магии.",
+          "effect": {
+            "type": "magic_resist",
+            "value": 0.1
+          }
+        },
+        {
+          "name": "Мира: ярость",
+          "desc": "+15% скорости атаки.",
+          "effect": {
+            "type": "attack_speed",
+            "value": 0.15
+          }
+        }
+      ],
+      "20": [
+        {
+          "name": "Мира: усиление чар",
+          "desc": "+20% урона способностей.",
+          "effect": {
+            "type": "spell_amp",
+            "value": 0.2
+          }
+        },
+        {
+          "name": "Мира: точный удар",
+          "desc": "+25% шанса критического удара.",
+          "effect": {
+            "type": "crit",
+            "value": 0.25
+          }
+        }
+      ]
+    }
+  },
+  "berserker": {
+    "coefficient": 0.95,
+    "attack_point": 0.35,
+    "backswing": 0.3,
+    "innate": {
+      "name": "Кровавый азарт",
+      "desc": "Ниже 35% HP скорость атаки растёт на 50%.",
+      "type": "low_hp_as",
+      "value": 0.5
+    },
+    "talents": {
+      "10": [
+        {
+          "name": "Гром: прилив str",
+          "desc": "+8 к основному атрибуту (str).",
+          "effect": {
+            "type": "stat",
+            "stat": "str",
+            "value": 8
+          }
+        },
+        {
+          "name": "Гром: запас сил",
+          "desc": "+150 к максимальному HP.",
+          "effect": {
+            "type": "hp",
+            "value": 150
+          }
+        }
+      ],
+      "15": [
+        {
+          "name": "Гром: оберег",
+          "desc": "+10% сопротивления магии.",
+          "effect": {
+            "type": "magic_resist",
+            "value": 0.1
+          }
+        },
+        {
+          "name": "Гром: ярость",
+          "desc": "+15% скорости атаки.",
+          "effect": {
+            "type": "attack_speed",
+            "value": 0.15
+          }
+        }
+      ],
+      "20": [
+        {
+          "name": "Гром: усиление чар",
+          "desc": "+20% урона способностей.",
+          "effect": {
+            "type": "spell_amp",
+            "value": 0.2
+          }
+        },
+        {
+          "name": "Гром: точный удар",
+          "desc": "+25% шанса критического удара.",
+          "effect": {
+            "type": "crit",
+            "value": 0.25
+          }
+        }
+      ]
+    }
+  },
+  "guardian": {
+    "coefficient": 0.85,
+    "attack_point": 0.35,
+    "backswing": 0.3,
+    "innate": {
+      "name": "Каменная аура",
+      "desc": "Соратники рядом получают +2 брони.",
+      "type": "aura_armor",
+      "value": 2
+    },
+    "talents": {
+      "10": [
+        {
+          "name": "Тарн: прилив str",
+          "desc": "+8 к основному атрибуту (str).",
+          "effect": {
+            "type": "stat",
+            "stat": "str",
+            "value": 8
+          }
+        },
+        {
+          "name": "Тарн: запас сил",
+          "desc": "+150 к максимальному HP.",
+          "effect": {
+            "type": "hp",
+            "value": 150
+          }
+        }
+      ],
+      "15": [
+        {
+          "name": "Тарн: оберег",
+          "desc": "+10% сопротивления магии.",
+          "effect": {
+            "type": "magic_resist",
+            "value": 0.1
+          }
+        },
+        {
+          "name": "Тарн: ярость",
+          "desc": "+15% скорости атаки.",
+          "effect": {
+            "type": "attack_speed",
+            "value": 0.15
+          }
+        }
+      ],
+      "20": [
+        {
+          "name": "Тарн: усиление чар",
+          "desc": "+20% урона способностей.",
+          "effect": {
+            "type": "spell_amp",
+            "value": 0.2
+          }
+        },
+        {
+          "name": "Тарн: точный удар",
+          "desc": "+25% шанса критического удара.",
+          "effect": {
+            "type": "crit",
+            "value": 0.25
+          }
+        }
+      ]
+    }
+  },
+  "assassin": {
+    "coefficient": 1.05,
+    "attack_point": 0.35,
+    "backswing": 0.3,
+    "innate": {
+      "name": "Удар в спину",
+      "desc": "+15% урона по цели, если удар нанесён сзади.",
+      "type": "backstab",
+      "value": 0.15
+    },
+    "talents": {
+      "10": [
+        {
+          "name": "Кайр: прилив agi",
+          "desc": "+8 к основному атрибуту (agi).",
+          "effect": {
+            "type": "stat",
+            "stat": "agi",
+            "value": 8
+          }
+        },
+        {
+          "name": "Кайр: запас сил",
+          "desc": "+150 к максимальному HP.",
+          "effect": {
+            "type": "hp",
+            "value": 150
+          }
+        }
+      ],
+      "15": [
+        {
+          "name": "Кайр: оберег",
+          "desc": "+10% сопротивления магии.",
+          "effect": {
+            "type": "magic_resist",
+            "value": 0.1
+          }
+        },
+        {
+          "name": "Кайр: ярость",
+          "desc": "+15% скорости атаки.",
+          "effect": {
+            "type": "attack_speed",
+            "value": 0.15
+          }
+        }
+      ],
+      "20": [
+        {
+          "name": "Кайр: усиление чар",
+          "desc": "+20% урона способностей.",
+          "effect": {
+            "type": "spell_amp",
+            "value": 0.2
+          }
+        },
+        {
+          "name": "Кайр: точный удар",
+          "desc": "+25% шанса критического удара.",
+          "effect": {
+            "type": "crit",
+            "value": 0.25
+          }
+        }
+      ]
+    }
+  },
+  "warlock": {
+    "coefficient": 0.85,
+    "attack_point": 0.45,
+    "backswing": 0.25,
+    "innate": {
+      "name": "Печать крови",
+      "desc": "15% урона способностей возвращается здоровьем.",
+      "type": "spell_lifesteal",
+      "value": 0.15
+    },
+    "talents": {
+      "10": [
+        {
+          "name": "Вельмир: прилив int",
+          "desc": "+8 к основному атрибуту (int).",
+          "effect": {
+            "type": "stat",
+            "stat": "int",
+            "value": 8
+          }
+        },
+        {
+          "name": "Вельмир: запас сил",
+          "desc": "+150 к максимальному HP.",
+          "effect": {
+            "type": "hp",
+            "value": 150
+          }
+        }
+      ],
+      "15": [
+        {
+          "name": "Вельмир: оберег",
+          "desc": "+10% сопротивления магии.",
+          "effect": {
+            "type": "magic_resist",
+            "value": 0.1
+          }
+        },
+        {
+          "name": "Вельмир: ярость",
+          "desc": "+15% скорости атаки.",
+          "effect": {
+            "type": "attack_speed",
+            "value": 0.15
+          }
+        }
+      ],
+      "20": [
+        {
+          "name": "Вельмир: усиление чар",
+          "desc": "+20% урона способностей.",
+          "effect": {
+            "type": "spell_amp",
+            "value": 0.2
+          }
+        },
+        {
+          "name": "Вельмир: точный удар",
+          "desc": "+25% шанса критического удара.",
+          "effect": {
+            "type": "crit",
+            "value": 0.25
+          }
+        }
+      ]
+    }
+  },
+  "monk": {
+    "coefficient": 0.9,
+    "attack_point": 0.35,
+    "backswing": 0.3,
+    "innate": {
+      "name": "Внутренний покой",
+      "desc": "+10% сопротивления магии.",
+      "type": "magic_resist",
+      "value": 0.1
+    },
+    "talents": {
+      "10": [
+        {
+          "name": "Инок Влас: прилив str",
+          "desc": "+8 к основному атрибуту (str).",
+          "effect": {
+            "type": "stat",
+            "stat": "str",
+            "value": 8
+          }
+        },
+        {
+          "name": "Инок Влас: запас сил",
+          "desc": "+150 к максимальному HP.",
+          "effect": {
+            "type": "hp",
+            "value": 150
+          }
+        }
+      ],
+      "15": [
+        {
+          "name": "Инок Влас: оберег",
+          "desc": "+10% сопротивления магии.",
+          "effect": {
+            "type": "magic_resist",
+            "value": 0.1
+          }
+        },
+        {
+          "name": "Инок Влас: ярость",
+          "desc": "+15% скорости атаки.",
+          "effect": {
+            "type": "attack_speed",
+            "value": 0.15
+          }
+        }
+      ],
+      "20": [
+        {
+          "name": "Инок Влас: усиление чар",
+          "desc": "+20% урона способностей.",
+          "effect": {
+            "type": "spell_amp",
+            "value": 0.2
+          }
+        },
+        {
+          "name": "Инок Влас: точный удар",
+          "desc": "+25% шанса критического удара.",
+          "effect": {
+            "type": "crit",
+            "value": 0.25
+          }
+        }
+      ]
+    }
+  },
+  "sniper": {
+    "coefficient": 1.0,
+    "attack_point": 0.45,
+    "backswing": 0.25,
+    "innate": {
+      "name": "Дальний глаз",
+      "desc": "+0.5 к дальности атаки.",
+      "type": "attack_range",
+      "value": 0.5
+    },
+    "talents": {
+      "10": [
+        {
+          "name": "Ясна: прилив agi",
+          "desc": "+8 к основному атрибуту (agi).",
+          "effect": {
+            "type": "stat",
+            "stat": "agi",
+            "value": 8
+          }
+        },
+        {
+          "name": "Ясна: запас сил",
+          "desc": "+150 к максимальному HP.",
+          "effect": {
+            "type": "hp",
+            "value": 150
+          }
+        }
+      ],
+      "15": [
+        {
+          "name": "Ясна: оберег",
+          "desc": "+10% сопротивления магии.",
+          "effect": {
+            "type": "magic_resist",
+            "value": 0.1
+          }
+        },
+        {
+          "name": "Ясна: ярость",
+          "desc": "+15% скорости атаки.",
+          "effect": {
+            "type": "attack_speed",
+            "value": 0.15
+          }
+        }
+      ],
+      "20": [
+        {
+          "name": "Ясна: усиление чар",
+          "desc": "+20% урона способностей.",
+          "effect": {
+            "type": "spell_amp",
+            "value": 0.2
+          }
+        },
+        {
+          "name": "Ясна: точный удар",
+          "desc": "+25% шанса критического удара.",
+          "effect": {
+            "type": "crit",
+            "value": 0.25
+          }
+        }
+      ]
+    }
+  },
+  "s": {
+    "coefficient": 0.9,
+    "attack_point": 0.45,
+    "backswing": 0.25,
+    "innate": {
+      "name": "Пожирание душ",
+      "desc": "Души за убийства дают дополнительный урон.",
+      "type": "soul_harvest",
+      "value": 2.0
+    },
+    "talents": {
+      "10": [
+        {
+          "name": "S: прилив agi",
+          "desc": "+8 к основному атрибуту (agi).",
+          "effect": {
+            "type": "stat",
+            "stat": "agi",
+            "value": 8
+          }
+        },
+        {
+          "name": "S: запас сил",
+          "desc": "+150 к максимальному HP.",
+          "effect": {
+            "type": "hp",
+            "value": 150
+          }
+        }
+      ],
+      "15": [
+        {
+          "name": "S: оберег",
+          "desc": "+10% сопротивления магии.",
+          "effect": {
+            "type": "magic_resist",
+            "value": 0.1
+          }
+        },
+        {
+          "name": "S: ярость",
+          "desc": "+15% скорости атаки.",
+          "effect": {
+            "type": "attack_speed",
+            "value": 0.15
+          }
+        }
+      ],
+      "20": [
+        {
+          "name": "S: усиление чар",
+          "desc": "+20% урона способностей.",
+          "effect": {
+            "type": "spell_amp",
+            "value": 0.2
+          }
+        },
+        {
+          "name": "S: точный удар",
+          "desc": "+25% шанса критического удара.",
+          "effect": {
+            "type": "crit",
+            "value": 0.25
+          }
+        }
+      ]
+    }
+  }
+}

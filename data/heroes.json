@@ -1,6 +1,6 @@
 {
   "progression": {
-    "max_level": 10,
+    "max_level": 25,
     "xp_base": 100,
     "xp_step": 50,
     "respawn_per_level": 1.0,
@@ -1035,6 +1035,120 @@
           ]
         }
       ]
+    },
+    "s": {
+      "name": "S",
+      "title": "Теневой демон",
+      "primary": "agi",
+      "color": [
+        196,
+        62,
+        78
+      ],
+      "portrait": "assets/heroes/s.png",
+      "base": {
+        "hp": 175,
+        "mana": 85,
+        "damage": 30,
+        "armor": 1.5,
+        "speed": 0.98,
+        "atk_range": 3.2,
+        "atk_cd": 0.85,
+        "radius": 0.2,
+        "projectile_speed": 9.5,
+        "str": 18,
+        "agi": 24,
+        "int": 20
+      },
+      "growth": {
+        "str": 1.8,
+        "agi": 2.8,
+        "int": 1.6
+      },
+      "abilities": [
+        {
+          "id": "shadow_raze_near",
+          "name": "Ближний разрез",
+          "key": "Q",
+          "desc": "Мгновенный разрез впереди S на близкой дистанции. Урон по области.",
+          "type": "raze",
+          "offset": 1.0,
+          "radius": 1.35,
+          "damage": 80,
+          "mana": 30,
+          "cooldown": 5.0,
+          "color": [
+            225,
+            85,
+            95
+          ]
+        },
+        {
+          "id": "shadow_raze_mid",
+          "name": "Средний разрез",
+          "key": "W",
+          "desc": "Мгновенный разрез впереди S на средней дистанции. Урон по области.",
+          "type": "raze",
+          "offset": 2.25,
+          "radius": 1.35,
+          "damage": 105,
+          "mana": 45,
+          "cooldown": 8.0,
+          "color": [
+            205,
+            62,
+            120
+          ]
+        },
+        {
+          "id": "shadow_raze_far",
+          "name": "Дальний разрез",
+          "key": "E",
+          "desc": "Мгновенный разрез впереди S на дальней дистанции. Урон и снижение брони на 4 секунды.",
+          "type": "raze",
+          "offset": 3.5,
+          "radius": 1.35,
+          "damage": 130,
+          "armor_reduce": 4,
+          "armor_duration": 4.0,
+          "mana": 65,
+          "cooldown": 14.0,
+          "color": [
+            180,
+            45,
+            165
+          ]
+        },
+        {
+          "id": "requiem_of_shadows",
+          "name": "Реквием теней",
+          "key": "R",
+          "desc": "После задержки выпускает 18 душ во все стороны. Урон каждой души растёт с запасом душ; касание замедляет.",
+          "type": "soul_burst",
+          "delay": 0.9,
+          "lines": 18,
+          "damage": 40,
+          "damage_per_soul": 2.5,
+          "slow": 0.35,
+          "slow_duration": 4.0,
+          "mana": 100,
+          "cooldown": 80.0,
+          "color": [
+            220,
+            70,
+            90
+          ]
+        }
+      ],
+      "passive": {
+        "id": "soul_harvest",
+        "name": "Пожирание душ",
+        "desc": "+2 урона за каждое убитое существо. Максимум 20 душ.",
+        "type": "soul_harvest",
+        "damage_per_soul": 2.0,
+        "max_souls": 20
+      },
+      "melee": false
     }
   }
 }

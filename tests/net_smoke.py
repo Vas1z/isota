@@ -73,6 +73,8 @@ def main() -> int:
         assert welcome_a["player_id"] != welcome_b["player_id"], "same player id"
         assert {welcome_a["team"], welcome_b["team"]} == {"A", "B"}, "teams are not A/B"
         assert welcome_a["host"] == welcome_a["player_id"], "first client is not host"
+        assert welcome_a["tick_rate"] == 60
+        assert welcome_a["snapshot_rate"] == 30
 
         # Лобби: выбор героев и готовность.
         a.send({"type": "select_hero", "hero": "knight"})
@@ -96,9 +98,17 @@ def main() -> int:
         assert start_a["players"][welcome_a["player_id"]]["hero"] == "knight"
         assert start_a["players"][welcome_b["player_id"]]["hero"] == "archer"
 
+        # Чат и пинг.
+        a.send({"type": "chat", "text": "gg"})
+        chat = wait_for(b, "chat")
+        assert chat["text"] == "gg"
+        a.send({"type": "ping", "x": 12.5, "y": 34.0})
+        ping = wait_for(b, "ping")
+        assert abs(float(ping["x"]) - 12.5) < 0.01
+
         # Двигаем героев в разные стороны.
-        a.send_command(1, {"type": "move", "x": 6.0, "y": 38.0})
-        b.send_command(1, {"type": "move", "x": 38.0, "y": 5.0})
+        a.send_command(1, {"type": "move", "x": 8.0, "y": 50.0})
+        b.send_command(1, {"type": "move", "x": 56.0, "y": 12.0})
 
         messages = collect(a, 2.5)
         snaps = [m["data"] for m in messages if m.get("type") == "snap"]
@@ -113,8 +123,8 @@ def main() -> int:
         unit_a = next(u for u in latest["units"] if u["id"] == hero_a)
         unit_b = next(u for u in latest["units"] if u["id"] == hero_b)
 
-        assert unit_a["y"] < 42.0, f"hero A did not move: {unit_a}"
-        assert unit_b["x"] < 41.0, f"hero B did not move: {unit_b}"
+        assert unit_a["y"] < 56.5, f"hero A did not move: {unit_a}"
+        assert unit_b["y"] > 6.5, f"hero B did not move: {unit_b}"
 
         player_a = latest["players"][welcome_a["player_id"]]
         assert player_a["hero_id"] == "knight"

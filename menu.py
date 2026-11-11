@@ -269,6 +269,15 @@ class MenuUI:
             y = rect.y + 132 + row * 24
             self._text(surface, f"{label}: {value}", self.mid, (200, 210, 225), (x, y))
 
+        passive = hero.get("passive") or {}
+        if passive:
+            passive_text = game.ui._fit_text(
+                f"ПАССИВ · {passive.get('name', '')}: {passive.get('desc', '')}",
+                self.small, 500,
+            )
+            self._text(surface, passive_text, self.small, (210, 165, 255),
+                       (rect.x + 24, rect.y + 186))
+
         ab_x = rect.x + 540
         self._text(surface, "СПОСОБНОСТИ", self.mid, (255, 220, 130), (ab_x, rect.y + 16))
         abilities = hero.get("abilities", [])

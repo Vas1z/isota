@@ -16,6 +16,7 @@ import threading
 from typing import Optional
 
 import loader
+from shared.ai import BotManager
 from shared.protocol import (
     DEFAULT_MAX_PLAYERS,
     DEFAULT_PORT,
@@ -97,6 +98,8 @@ class Room:
         self.world: Optional[World] = None
         self.started = False
         self.host_id: Optional[str] = None
+        self.bot_manager = None
+        self.training = False
 
     # ----- лобби -----
     def lobby_state(self) -> dict:
@@ -173,6 +176,23 @@ class Room:
         if self.started:
             if msg.get("type") == "cmd" and isinstance(msg.get("cmd"), dict):
                 self.world.apply_command(player_id, msg["cmd"])
+            elif msg.get("type") == "chat":
+                text = str(msg.get("text", ""))[:200]
+                for other in self.clients.values():
+                    other.push({
+                        "type": "chat",
+                        "player": player_id,
+                        "name": client.name,
+                        "text": text,
+                    })
+            elif msg.get("type") == "ping":
+                for other in self.clients.values():
+                    other.push({
+                        "type": "ping",
+                        "player": player_id,
+                        "x": msg.get("x", 0),
+                        "y": msg.get("y", 0),
+                    })
             return
 
         mtype = msg.get("type")
@@ -185,9 +205,14 @@ class Room:
             client.ready = bool(msg.get("ready", not client.ready))
             self.broadcast_lobby()
         elif mtype == "start":
-            self.start_match(player_id)
+            self.start_match(
+                player_id,
+                fill_bots=bool(msg.get("bots", False)),
+                training=bool(msg.get("training", False)),
+            )
 
-    def start_match(self, requested_by: str) -> None:
+    def start_match(self, requested_by: str, fill_bots: bool = False,
+                    training: bool = False) -> None:
         if self.started:
             return
         client = self.clients.get(requested_by)
@@ -210,16 +235,47 @@ class Room:
                 c.hero_id = default_hero
 
         self.world = World(self.data)
+        self.world.training = training
+        self.training = training
         for pid, c in self.clients.items():
             self.world.add_player(pid, c.team, c.name, c.hero_id)
 
+        bot_ids = []
+        bot_teams = []
+        if fill_bots:
+            heroes = list(self.data["heroes"]["heroes"].keys())
+            bot_names = ["Бот-Свет", "Бот-Тьма", "Бот-Страж", "Бот-Тень"]
+            index = 0
+            while len(self.clients) + len(bot_ids) < self.max_players:
+                a_count = sum(1 for c in self.clients.values() if c.team == "A") \
+                    + sum(1 for t in bot_teams if t == "A")
+                b_count = sum(1 for c in self.clients.values() if c.team == "B") \
+                    + sum(1 for t in bot_teams if t == "B")
+                team = "A" if a_count <= b_count else "B"
+                pid = f"bot{index + 1}"
+                hero_id = heroes[index % len(heroes)]
+                self.world.add_player(pid, team, bot_names[index % len(bot_names)], hero_id)
+                bot_ids.append(pid)
+                bot_teams.append(team)
+                index += 1
+            if bot_ids:
+                bot_seed = len(self.clients) * 17
+                self.bot_manager = BotManager(self.world, bot_ids, bot_seed)
+
         self.started = True
+        player_info = {
+            pid: {"team": c.team, "hero": c.hero_id, "bot": False}
+            for pid, c in self.clients.items()
+        }
+        for pid, team in zip(bot_ids, bot_teams):
+            player_info[pid] = {
+                "team": team,
+                "hero": self.world.players[pid].hero_id,
+                "bot": True,
+            }
         start_message = {
             "type": "match_start",
-            "players": {
-                pid: {"team": c.team, "hero": c.hero_id}
-                for pid, c in self.clients.items()
-            },
+            "players": player_info,
         }
         for c in self.clients.values():
             c.push(start_message)
@@ -283,10 +339,15 @@ class Room:
                 if delay > 0:
                     await asyncio.sleep(delay)
 
-                self.world.tick(tick_dt)
+                if self.bot_manager is not None:
+                    self.bot_manager.update(tick_dt)
+                world = self.world
+                if world is None:
+                    break
+                world.tick(tick_dt)
 
                 if tick % snapshot_every == 0:
-                    message = {"type": "snap", "data": self.world.snapshot()}
+                    message = {"type": "snap", "data": world.snapshot()}
                     if self.world.events:
                         message["events"] = list(self.world.events)
                         self.world.events.clear()
@@ -347,7 +408,7 @@ class GameServer:
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     continue
 
-                if msg.get("type") == "ping":
+                if msg.get("type") == "ping" and "t" in msg and "x" not in msg:
                     client.push({"type": "pong", "t": msg.get("t")})
                 else:
                     self.room.handle_message(client.player_id, msg)

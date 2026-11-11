@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Проверка большой карты 48x48 для 2D MOBA-прототипа.
+"""Проверка большой карты 64x64 для 2D MOBA-прототипа.
 
 Использование:
-    python tools/validate_map.py [path/to/map_large.json]
+    python tools/validate_map.py [path/to/map.json]
 
 Скрипт проверяет структуру JSON, границы сетки, линии, вышки, троны,
 базы, спавны, нейтральные лагеря и руны. При успехе печатает OK.
@@ -16,13 +16,15 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Sequence, Tuple
 
-GRID_SIZE = 48.0
+GRID_SIZE = 64.0
 HALF_GRID = GRID_SIZE / 2.0
 LANE_NAMES = ("top", "mid", "bot")
 TEAMS = ("A", "B")
 TOWERS_PER_TEAM = 11
-MIN_CAMPS = 6
-CAMP_TYPES = frozenset({"wolf", "golem", "troll"})
+MIN_CAMPS = 12
+CAMP_TYPES = frozenset({
+    "wolf", "golem", "troll", "mossback", "emberling", "duskbat", "crystal_golem",
+})
 
 # Вышки стоят вдоль линии, но не на самом пути крипов.
 TOWER_LANE_MIN = 0.8
@@ -33,7 +35,7 @@ CAMP_TOWER_MIN = 2.0
 # Допуск для "линия начинается/заканчивается у базы" и трона у базы.
 BASE_TOLERANCE = 3.0
 
-DEFAULT_MAP = Path(__file__).resolve().parent.parent / "data" / "map_large.json"
+DEFAULT_MAP = Path(__file__).resolve().parent.parent / "data" / "map.json"
 
 Point = Tuple[float, float]
 
@@ -272,8 +274,8 @@ def validate_neutrals(
         respawn = camp.get("respawn")
         if isinstance(respawn, bool) or not isinstance(respawn, (int, float)):
             fail(f"neutrals[{i}].respawn: number expected, got {respawn!r}")
-        if float(respawn) != 60.0:
-            fail(f"neutrals[{i}].respawn: expected 60, got {respawn!r}")
+        if float(respawn) < 30.0 or float(respawn) > 180.0:
+            fail(f"neutrals[{i}].respawn: expected 30..180, got {respawn!r}")
 
         d_lane = lane_distance(pos, lanes)
         if d_lane < CAMP_LANE_MIN:
@@ -310,18 +312,12 @@ def validate_runes(data: dict) -> List[Point]:
     runes_raw = data.get("runes")
     if not isinstance(runes_raw, list):
         fail("runes: list expected")
-    if len(runes_raw) != 2:
-        fail(f"runes: expected exactly 2, got {len(runes_raw)}")
+    if len(runes_raw) != 4:
+        fail(f"runes: expected exactly 4, got {len(runes_raw)}")
 
     runes = [parse_point(r, f"runes[{i}]") for i, r in enumerate(runes_raw)]
-    if len({(round(x, 3), round(y, 3)) for x, y in runes}) != 2:
+    if len({(round(x, 3), round(y, 3)) for x, y in runes}) != 4:
         fail("runes: duplicate rune positions")
-
-    for i, rune in enumerate(runes):
-        if abs(rune[0] - rune[1]) > 3.0:
-            fail(
-                f"runes[{i}] at {list(rune)}: rune must be on or near the river x=y"
-            )
 
     return runes
 

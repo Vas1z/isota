@@ -49,6 +49,12 @@ class Console:
             "hitboxes": self._cmd_show_hitboxes,
             "debug": self._cmd_debug,
             "ping": self._cmd_ping,
+            "say": self._cmd_say,
+            "chat": self._cmd_say,
+            "volume": self._cmd_volume,
+            "sens": self._cmd_sens,
+            "lang": self._cmd_lang,
+            "training": self._cmd_training,
             "net": self._cmd_net,
             "status": self._cmd_status,
             "players": self._cmd_players,
@@ -77,6 +83,11 @@ class Console:
             "show_hitboxes [on|off]": "показать хитбоксы юнитов",
             "debug [on|off]": "сетка + хитбоксы одной командой",
             "ping": "отправить ping и показать последний RTT",
+            "say <текст>": "отправить сообщение в LAN-чат",
+            "volume <0..1>": "громкость",
+            "sens <0.1..5>": "чувствительность камеры/мыши",
+            "lang <ru|en>": "язык интерфейса",
+            "training [on|off]": "режим тренировки: золото и сброс КД",
             "net": "состояние соединения и снапшотов",
             "status": "режим, игрок, время, FPS, ping",
             "players": "список игроков и их золото/CS/K/D",
@@ -244,6 +255,65 @@ class Console:
         self.game.show_grid = value
         self.game.show_hitboxes = value
         self.log(f"debug = {value} (grid + hitboxes)", (150, 220, 150))
+
+    def _cmd_training(self, args) -> None:
+        value = True
+        if args and args[0].lower() in ("off", "0", "false", "выкл"):
+            value = False
+        if self.game.net_mode and self.game.net:
+            self.game.net.send_command(
+                getattr(self.game, "_seq", 0),
+                {"type": "training", "enabled": value},
+            )
+        elif self.game.world is not None:
+            self.game.world.training = value
+        self.log(f"training: {'on' if value else 'off'}", (200, 220, 150))
+
+    def _cmd_volume(self, args) -> None:
+        try:
+            value = max(0.0, min(1.0, float(args[0])))
+        except (IndexError, ValueError):
+            value = float(self.game.user_settings.get("volume", 0.7))
+            self.log(f"volume: {value:.2f}", (200, 220, 255))
+            return
+        self.game.user_settings["volume"] = value
+        self.game.save_user_settings()
+        self.log(f"volume: {value:.2f}", (200, 220, 255))
+
+    def _cmd_sens(self, args) -> None:
+        try:
+            value = max(0.1, min(5.0, float(args[0])))
+        except (IndexError, ValueError):
+            value = float(self.game.user_settings.get("sensitivity", 1.0))
+            self.log(f"sensitivity: {value:.2f}", (200, 220, 255))
+            return
+        self.game.user_settings["sensitivity"] = value
+        self.game.save_user_settings()
+        self.log(f"sensitivity: {value:.2f}", (200, 220, 255))
+
+    def _cmd_lang(self, args) -> None:
+        lang = (args[0].lower() if args else "")
+        if lang not in ("ru", "en"):
+            lang = str(self.game.user_settings.get("language", "ru"))
+            self.log(f"language: {lang} (ru|en)", (200, 220, 255))
+            return
+        self.game.user_settings["language"] = lang
+        self.game.save_user_settings()
+        self.log(f"language: {lang}", (200, 220, 255))
+
+    def _cmd_say(self, args) -> None:
+        text = " ".join(args).strip()
+        if not text:
+            self.log("say: пустое сообщение", (200, 200, 120))
+            return
+        if not self.game.net_mode or not self.game.net:
+            self.log(f"say: {text}", (170, 220, 255))
+            return
+        try:
+            self.game.net.send({"type": "chat", "text": text})
+            self.log(f"say: {text}", (170, 220, 255))
+        except (ConnectionError, OSError) as exc:
+            self.log(f"say failed: {exc}", (255, 120, 120))
 
     def _cmd_ping(self, args) -> None:
         if not self.game.net_mode:

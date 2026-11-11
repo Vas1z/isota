@@ -29,6 +29,13 @@ class Grid:
     zoom = 1.0
 
     @classmethod
+    def world_size(cls):
+        return (
+            cls.grid_w * cls.tile_size * cls.zoom,
+            cls.grid_h * cls.tile_size * cls.zoom,
+        )
+
+    @classmethod
     def to_screen(cls, gx, gy):
         sx = gx * cls.tile_size * cls.zoom
         sy = gy * cls.tile_size * cls.zoom
@@ -115,8 +122,7 @@ class Camera:
         self.y += dy
 
     def clamp_to_world(self, view_w: int, view_h: int):
-        world_w = Grid.grid_w * Grid.tile_size * Grid.zoom
-        world_h = Grid.grid_h * Grid.tile_size * Grid.zoom
+        world_w, world_h = Grid.world_size()
 
         if world_w <= view_w:
             self.x = -(view_w - world_w) / 2
@@ -143,15 +149,18 @@ class Game:
         self.heroes_data = self.data["heroes"]
         self.progression = self.heroes_data.get("progression", {})
         self.heroes = self.heroes_data["heroes"]
+        self.heroes_meta = self.data.get("heroes_meta", {})
         self.hero_order = list(self.heroes.keys())
         self.items_data = self.data["items"]["items"]
-        self.max_level = int(self.progression.get("max_level", 10))
+        self.neutral_items_data = self.data["items"].get("neutral_items", {})
+        self.max_level = max(25, int(self.progression.get("max_level", 10)))
         self.selected_hero = self.hero_order[0]
         self.hero_id = self.selected_hero
         self.hero_page = 0
 
         self.cfg = self.data["settings"]
         self.controls = self.data["controls"]
+        self.user_settings = dict(self.cfg.get("user", {}))
         for action, key_name in DEFAULT_CONTROLS.items():
             self.controls.setdefault(action, key_name)
         self.control_codes = {
@@ -171,7 +180,7 @@ class Game:
         self.text_color = tuple(debug_cfg.get("text_color", [255, 255, 0]))
 
         Grid.tile_size = 48
-        Grid.zoom = self.cfg["iso"].get("zoom", 1.0)
+        Grid.zoom = float(self.cfg.get("iso", {}).get("zoom", 1.0))
         Grid.grid_w = self.cfg["grid"]["width"]
         Grid.grid_h = self.cfg["grid"]["height"]
 
@@ -235,7 +244,15 @@ class Game:
         self.items: List[str] = []
         self.cooldowns: dict = {}
         self.abilities: list = []
+        self.soul_stacks = 0
+        self.pending_talents: list = []
+        self.talent_offers: dict = {}
+        self.neutral_items: list = []
+        self.item_cooldowns: dict = {}
+        self.reliable_gold = 0
+        self.unreliable_gold = 0
         self.pending_ability: Optional[int] = None
+        self.pending_item: Optional[str] = None
         self.shop_open = False
         self.shop_message = ""
         self.scoreboard_open = False
@@ -247,6 +264,7 @@ class Game:
 
         self.move_marker: Optional[Tuple[float, float]] = None
         self.attack_marker_uid: Optional[int] = None
+        self.ping_marker: Optional[Tuple[float, float, float]] = None
 
         # --- подключение до создания окна ---
         if self.net_mode:
@@ -319,6 +337,16 @@ class Game:
         self.console.log("press ~ or F1 to open this console", (150, 150, 150))
 
     # ---------- настройки управления ----------
+    def save_user_settings(self) -> None:
+        path = Path(__file__).parent / "data" / "settings.json"
+        try:
+            self.cfg["user"] = dict(self.user_settings)
+            with path.open("w", encoding="utf-8") as file:
+                json.dump(self.cfg, file, ensure_ascii=False, indent=2)
+                file.write("\n")
+        except OSError as exc:
+            self.settings_message = f"Не удалось сохранить: {exc}"
+
     def save_controls(self) -> None:
         path = Path(__file__).parent / "data" / "controls.json"
         try:
@@ -386,11 +414,13 @@ class Game:
         self.shop_message = ""
         self.scoreboard_open = False
         self.pending_ability = None
+        self.pending_item = None
         self.move_marker = None
         self.attack_marker_uid = None
         self.floating_texts = []
         self.ability_effects = []
         self.melee_effects = []
+        self.soul_stacks = 0
         self.disconnected = False
         self.status_message = ""
         self.menu_message = ""
@@ -589,6 +619,13 @@ class Game:
         self.max_mana = player.max_mana
         self.items = list(player.items)
         self.cooldowns = dict(player.cooldowns)
+        self.soul_stacks = player.soul_stacks
+        self.pending_talents = list(player.pending_talents)
+        self.talent_offers = dict(player.talent_offers)
+        self.neutral_items = list(player.neutral_items)
+        self.item_cooldowns = dict(player.item_cooldowns)
+        self.reliable_gold = int(player.reliable_gold)
+        self.unreliable_gold = int(player.unreliable_gold)
         self.respawn_timer = player.respawn_timer
         self.match_time = self.world.match_time
         self.match_over = self.world.match_over
@@ -602,6 +639,10 @@ class Game:
             ProjectileView(pos=p.pos, color=p.color, radius=p.radius)
             for p in self.world.projectiles
         ]
+        self.projectiles.extend(
+            ProjectileView(pos=s.pos, color=s.color, radius=7)
+            for s in self.world.souls
+        )
         self._sync_offline_player()
 
     def _pump_net(self) -> None:
@@ -625,6 +666,20 @@ class Game:
                 if self.state != "game":
                     self.state = "lobby"
 
+            elif mtype == "chat":
+                name = msg.get("name", "?")
+                self.console.log(f"{name}: {msg.get('text', '')}", (170, 220, 255))
+
+            elif mtype == "ping":
+                try:
+                    self.ping_marker = (
+                        float(msg.get("x", 0)),
+                        float(msg.get("y", 0)),
+                        time.monotonic(),
+                    )
+                except (TypeError, ValueError):
+                    pass
+
             elif mtype == "match_start":
                 self.state = "game"
                 self.match_over = False
@@ -635,8 +690,10 @@ class Game:
                 self.shop_message = ""
                 self.scoreboard_open = False
                 self.pending_ability = None
+                self.pending_item = None
                 self.move_marker = None
                 self.attack_marker_uid = None
+                self.ping_marker = None
                 self.units = []
                 self.projectiles = []
                 self.hero = None
@@ -644,6 +701,7 @@ class Game:
                 self.floating_texts = []
                 self.ability_effects = []
                 self.melee_effects = []
+                self.soul_stacks = 0
                 self.match_time = 0.0
                 info = (msg.get("players") or {}).get(self.player_id, {})
                 hero_id = info.get("hero")
@@ -737,6 +795,21 @@ class Game:
                 lifetime=0.7,
                 max_lifetime=0.7,
             ))
+        elif kind == "soul_burst":
+            color = event.get("color", [205, 125, 255])
+            self.ability_effects.append(AbilityEffect(
+                x=float(event.get("x", 0)),
+                y=float(event.get("y", 0)),
+                radius=3.4,
+                color=tuple(color) if isinstance(color, (list, tuple)) else (205, 125, 255),
+                lifetime=0.6,
+                max_lifetime=0.6,
+            ))
+            if event.get("player") == self.player_id:
+                self.console.log(
+                    f"Реквием душ: {int(event.get('count', 0))} душ",
+                    (215, 145, 255),
+                )
         elif kind == "melee_attack":
             color = event.get("color", [255, 230, 160])
             self.melee_effects.append(MeleeEffect(
@@ -745,6 +818,36 @@ class Game:
                 angle=float(event.get("angle", 0.0)),
                 color=tuple(color) if isinstance(color, (list, tuple)) else (255, 230, 160),
             ))
+        elif kind == "rune" and event.get("player") == self.player_id:
+            rune_name = "богатство" if event.get("rune") == "wealth" else "мудрость"
+            self.console.log(f"руна {rune_name} подобрана", (200, 180, 255))
+        elif kind == "boss_drop":
+            if event.get("team") == self.team:
+                self.console.log("босс повержен: команда получила бафф", (255, 200, 100))
+        elif kind == "boss_phase":
+            self.console.log("босс перешёл во вторую фазу", (255, 150, 100))
+        elif kind == "boss_death":
+            respawn = int(event.get("respawn", 0))
+            self.console.log(
+                f"босс респавнится через {respawn // 60}:{respawn % 60:02d}",
+                (200, 180, 150),
+            )
+        elif kind == "neutral_item" and event.get("player") == self.player_id:
+            item = (self.items_data.get(event.get("item"))
+                    or self.neutral_items_data.get(event.get("item"), {}))
+            self.console.log(
+                f"нейтральный предмет: {item.get('name', event.get('item'))}",
+                (210, 170, 255),
+            )
+        elif kind == "talent" and event.get("player") == self.player_id:
+            self.console.log(f"талант: {event.get('name', '')}", (225, 190, 255))
+        elif kind == "sold" and event.get("player") == self.player_id:
+            self.console.log(
+                f"продано: {event.get('item')} (+{event.get('amount', 0)})",
+                (180, 220, 180),
+            )
+        elif kind == "courier_delivered" and event.get("player") == self.player_id:
+            self.console.log("курьер доставил предметы", (180, 230, 180))
         elif kind == "match_end":
             self.match_over = True
             winner = event.get("winner")
@@ -787,6 +890,12 @@ class Game:
             self.int = float(me.get("int", 0.0))
             self.mana = float(me.get("mana", 0.0))
             self.max_mana = float(me.get("max_mana", 0.0))
+            self.soul_stacks = int(me.get("souls", 0))
+            self.pending_talents = list(me.get("pending_talents", []))
+            self.neutral_items = list(me.get("neutral_items", []))
+            self.item_cooldowns = dict(me.get("item_cooldowns", {}))
+            self.reliable_gold = int(me.get("reliable_gold", 0))
+            self.unreliable_gold = int(me.get("unreliable_gold", 0))
             self.items = list(me.get("items", []))
             self.cooldowns = {
                 int(slot): float(cd)
@@ -832,6 +941,7 @@ class Game:
                 atk_dmg=float(u.get("dmg", 0.0)),
                 speed=float(u.get("speed", 0.0)),
                 armor=float(u.get("armor", 0.0)),
+                facing=tuple(u.get("facing", (1.0, 0.0))),
             ))
 
         self.units = units
@@ -1019,7 +1129,7 @@ class Game:
         if not self.net or not self.is_host:
             return
         try:
-            self.net.send({"type": "start"})
+            self.net.send({"type": "start", "bots": True})
         except (ConnectionError, OSError):
             self.disconnected = True
 
@@ -1033,7 +1143,29 @@ class Game:
         item_id = self.ui.shop_hit(pos)
         if not item_id:
             return
-        self._send_cmd({"type": "buy", "item": item_id})
+        mods = pygame.key.get_mods()
+        if mods & pygame.KMOD_CTRL:
+            self._send_cmd({"type": "sell", "item": item_id})
+        else:
+            self._send_cmd({"type": "buy", "item": item_id})
+
+    def use_item_slot(self, index: int) -> None:
+        if self.state != "game" or self.match_over:
+            return
+        if index < 0 or index >= len(self.items):
+            return
+        item_id = self.items[index]
+        item = self.items_data.get(item_id, {})
+        active = item.get("active") or {}
+        if not active:
+            self.status_message = "У предмета нет активного эффекта"
+            return
+        effect = active.get("effect")
+        if effect in ("blink", "hex", "damage"):
+            self.pending_item = item_id
+            self.status_message = f"Выбери цель: {active.get('name', item.get('name', item_id))}"
+        else:
+            self._send_cmd({"type": "use_item", "item": item_id})
 
     def cast_ability(self, slot: int) -> None:
         if self.state != "game" or self.match_over:
@@ -1056,18 +1188,43 @@ class Game:
             self.pending_ability = slot
             self.shop_open = False
             self.status_message = f"Выбери точку: {ability.get('name')}"
+        elif atype == "aoe_offset":
+            self.pending_ability = slot
+            self.shop_open = False
+            self.status_message = f"Выбери направление: {ability.get('name')}"
         else:
             self._send_cmd({"type": "cast", "slot": slot})
 
     def ability_click(self) -> None:
-        if self.pending_ability is None or self.state != "game" or self.match_over:
+        if self.state != "game" or self.match_over:
             return
-        slot = self.pending_ability
-        ability = self.abilities[slot]
         mx, my = pygame.mouse.get_pos()
         wx = mx + self.camera.x
         wy = my + self.camera.y
         gx, gy = Grid.to_grid(wx, wy)
+
+        if self.pending_item is not None:
+            target = None
+            best = 1.0
+            for unit in self.units:
+                if not unit.alive or unit.team == self.team:
+                    continue
+                d = dist((gx, gy), unit.pos)
+                if d < best:
+                    best = d
+                    target = unit
+            cmd = {"type": "use_item", "item": self.pending_item, "x": gx, "y": gy}
+            if target is not None:
+                cmd["target"] = target.uid
+            self._send_cmd(cmd)
+            self.pending_item = None
+            self.status_message = ""
+            return
+
+        if self.pending_ability is None:
+            return
+        slot = self.pending_ability
+        ability = self.abilities[slot]
 
         if ability.get("type") == "target_damage":
             target = None
@@ -1088,11 +1245,19 @@ class Game:
         self.pending_ability = None
         self.status_message = ""
 
+    def send_ping_click(self) -> None:
+        mx, my = pygame.mouse.get_pos()
+        gx, gy = Grid.to_grid(mx + self.camera.x, my + self.camera.y)
+        self.ping_marker = (gx, gy, time.monotonic())
+        if self.net_mode and self.net is not None:
+            self.net.send({"type": "ping", "x": gx, "y": gy})
+
     def command_click(self) -> None:
         if self.match_over:
             return
 
         self.pending_ability = None
+        self.pending_item = None
         mx, my = pygame.mouse.get_pos()
         wx = mx + self.camera.x
         wy = my + self.camera.y
@@ -1146,7 +1311,9 @@ class Game:
         keys = pygame.key.get_pressed()
         cam_dx = 0
         cam_dy = 0
-        speed = self.camera.scroll_speed * dt
+        speed = self.camera.scroll_speed * float(
+            self.user_settings.get("sensitivity", 1.0)
+        ) * dt
 
         if keys[pygame.K_LEFT]:
             cam_dx -= speed
@@ -1412,6 +1579,14 @@ class Game:
             bx = sprite_rect.centerx - bw / 2
             by = sprite_rect.top - 8
 
+        # Направление взгляда своего героя: от него зависят разрезы S.
+        if unit.kind == "hero" and unit.alive and unit.uid == self.hero_uid:
+            fx, fy = unit.facing
+            tip = (int(sx + fx * r * 1.9), int(sy + fy * r * 1.9))
+            base = (int(sx + fx * r * 1.05), int(sy + fy * r * 1.05))
+            pygame.draw.line(surface, (255, 225, 180), base, tip, 2)
+            pygame.draw.circle(surface, (255, 225, 180), tip, 3)
+
         pygame.draw.rect(surface, c["hp_bg"], (int(bx), int(by), int(bw), bh))
         frac = max(0.0, min(1.0, unit.hp / max(1.0, unit.max_hp)))
         col = c["hp_a"] if unit.team == "A" else c["hp_b"]
@@ -1518,6 +1693,16 @@ class Game:
                 sx, sy = self.camera.apply(sx, sy)
                 pygame.draw.circle(surface, (255, 80, 80), (int(sx), int(sy)), 20, 2)
 
+        if self.ping_marker is not None:
+            px, py, stamp = self.ping_marker
+            if time.monotonic() - stamp > 4.0:
+                self.ping_marker = None
+            else:
+                sx, sy = Grid.to_screen(px, py)
+                sx, sy = self.camera.apply(sx, sy)
+                pygame.draw.circle(surface, (120, 220, 255), (int(sx), int(sy)), 18, 2)
+                pygame.draw.circle(surface, (120, 220, 255), (int(sx), int(sy)), 4)
+
         for effect in self.ability_effects:
             sx, sy = Grid.to_screen(effect.x, effect.y)
             sx, sy = self.camera.apply(sx, sy)
@@ -1591,6 +1776,8 @@ class Game:
 
             if self.match_over:
                 self.ui.draw_match_end(self.screen)
+            else:
+                self.ui.draw_death_overlay(self.screen)
 
         # Консоль рисуется поверх всего, даже если HUD выключен.
         if self.console.open:
@@ -1657,6 +1844,23 @@ class Game:
                         self.cast_ability(2)
                     elif event.key == self.control_codes["ability_4"]:
                         self.cast_ability(3)
+                    elif event.key in (
+                        pygame.K_1, pygame.K_2, pygame.K_3,
+                        pygame.K_4, pygame.K_5, pygame.K_6,
+                    ):
+                        self.use_item_slot(event.key - pygame.K_1)
+                    elif event.key == pygame.K_z and self.pending_talents:
+                        self._send_cmd({
+                            "type": "talent",
+                            "level": self.pending_talents[0],
+                            "choice": 0,
+                        })
+                    elif event.key == pygame.K_x and self.pending_talents:
+                        self._send_cmd({
+                            "type": "talent",
+                            "level": self.pending_talents[0],
+                            "choice": 1,
+                        })
                     elif event.key == pygame.K_TAB:
                         self.scoreboard_open = not self.scoreboard_open
                     continue
@@ -1674,7 +1878,9 @@ class Game:
 
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:
-                        if self.shop_open:
+                        if pygame.key.get_mods() & pygame.KMOD_ALT and not self.shop_open:
+                            self.send_ping_click()
+                        elif self.shop_open:
                             self.shop_click(pygame.mouse.get_pos())
                         else:
                             self.ability_click()

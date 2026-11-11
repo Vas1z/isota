@@ -12,8 +12,13 @@
     "zoom": 2.0
   },
   "grid": {
-    "width": 48,
-    "height": 48
+    "width": 64,
+    "height": 64
+  },
+  "user": {
+    "sensitivity": 1.0,
+    "volume": 0.7,
+    "language": "ru"
   },
   "camera": {
     "follow_hero": false,

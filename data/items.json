@@ -1,5 +1,107 @@
 {
   "items": {
+    "twig": {
+      "name": "Ветка",
+      "cost": 50,
+      "desc": "+1 ко всем атрибутам",
+      "icon": "assets/items/ring.png",
+      "bonus": {
+        "str": 1,
+        "agi": 1,
+        "int": 1
+      },
+      "tier": "component"
+    },
+    "leather": {
+      "name": "Лоскут кожи",
+      "cost": 90,
+      "desc": "+70 к максимальному HP",
+      "icon": "assets/items/armor.png",
+      "bonus": {
+        "hp": 70
+      },
+      "tier": "component"
+    },
+    "mote": {
+      "name": "Пылинка маны",
+      "cost": 80,
+      "desc": "+60 к максимальной мане",
+      "icon": "assets/items/mana_crystal.png",
+      "bonus": {
+        "mana": 60
+      },
+      "tier": "component"
+    },
+    "short_blade": {
+      "name": "Короткий клинок",
+      "cost": 120,
+      "desc": "+8 к урону",
+      "icon": "assets/items/blade.png",
+      "bonus": {
+        "damage": 8
+      },
+      "tier": "component"
+    },
+    "buckler": {
+      "name": "Малый щит",
+      "cost": 110,
+      "desc": "+2 к броне",
+      "icon": "assets/items/armor.png",
+      "bonus": {
+        "armor": 2
+      },
+      "tier": "component"
+    },
+    "robe": {
+      "name": "Ученическая роба",
+      "cost": 100,
+      "desc": "+8% сопротивления магии",
+      "icon": "assets/items/cloak.png",
+      "bonus": {
+        "magic_resist": 0.08
+      },
+      "tier": "component"
+    },
+    "feather": {
+      "name": "Быстрое перо",
+      "cost": 100,
+      "desc": "+0.12 к скорости",
+      "icon": "assets/items/boots.png",
+      "bonus": {
+        "speed": 0.12
+      },
+      "tier": "component"
+    },
+    "seed": {
+      "name": "Семя жизни",
+      "cost": 130,
+      "desc": "+90 к максимальному HP",
+      "icon": "assets/items/heart.png",
+      "bonus": {
+        "hp": 90
+      },
+      "tier": "component"
+    },
+    "charm": {
+      "name": "Оберег фокуса",
+      "cost": 120,
+      "desc": "+40 к максимальной мане",
+      "icon": "assets/items/ring.png",
+      "bonus": {
+        "mana": 40
+      },
+      "tier": "component"
+    },
+    "scroll": {
+      "name": "Свиток рецепта",
+      "cost": 150,
+      "desc": "+5 к урону",
+      "icon": "assets/items/staff.png",
+      "bonus": {
+        "damage": 5
+      },
+      "tier": "component"
+    },
     "boots": {
       "name": "Ботинки",
       "cost": 250,
@@ -8,6 +110,7 @@
       "bonus": {
         "speed": 0.35
       },
+      "tier": "base",
       "unique": true
     },
     "blade": {
@@ -18,7 +121,7 @@
       "bonus": {
         "damage": 12
       },
-      "unique": false
+      "tier": "base"
     },
     "armor": {
       "name": "Латы",
@@ -28,7 +131,7 @@
       "bonus": {
         "armor": 6
       },
-      "unique": false
+      "tier": "base"
     },
     "mana_crystal": {
       "name": "Кристалл маны",
@@ -38,7 +141,7 @@
       "bonus": {
         "mana": 120
       },
-      "unique": false
+      "tier": "base"
     },
     "heart": {
       "name": "Сердце",
@@ -48,40 +151,42 @@
       "bonus": {
         "hp": 150
       },
-      "unique": false
+      "tier": "base"
     },
     "ring": {
       "name": "Кольцо оберега",
       "cost": 350,
-      "desc": "+3 к броне, +40 к максимальному HP",
+      "desc": "+3 к броне, +40 к HP",
       "icon": "assets/items/ring.png",
       "bonus": {
         "armor": 3,
         "hp": 40
       },
+      "tier": "base",
       "unique": true
     },
     "cloak": {
       "name": "Плащ пепельной тени",
       "cost": 500,
-      "desc": "+2 к броне, +0.12 к скорости передвижения",
+      "desc": "+2 к броне, +0.12 к скорости",
       "icon": "assets/items/cloak.png",
       "bonus": {
         "armor": 2,
         "speed": 0.12
       },
+      "tier": "base",
       "unique": true
     },
     "staff": {
       "name": "Посох ржавых звёзд",
       "cost": 650,
-      "desc": "+150 к максимальной мане, +15 к урону",
+      "desc": "+150 к мане, +15 к урону",
       "icon": "assets/items/staff.png",
       "bonus": {
         "mana": 150,
         "damage": 15
       },
-      "unique": false
+      "tier": "base"
     },
     "orb": {
       "name": "Сфера гнилого света",
@@ -91,18 +196,466 @@
       "bonus": {
         "damage": 22
       },
+      "tier": "base",
       "unique": true
     },
     "greaves": {
       "name": "Путники болот",
       "cost": 550,
-      "desc": "+0.3 к скорости передвижения, +2 к броне",
+      "desc": "+0.3 к скорости, +2 к броне",
       "icon": "assets/items/greaves.png",
       "bonus": {
         "speed": 0.3,
         "armor": 2
       },
+      "tier": "base",
       "unique": true
+    },
+    "power_treads": {
+      "name": "Шаги силы",
+      "cost": 950,
+      "desc": "+0.45 скорости, +18 урона",
+      "icon": "assets/items/boots.png",
+      "bonus": {
+        "speed": 0.45,
+        "damage": 18
+      },
+      "tier": "mid",
+      "recipe": [
+        "boots",
+        "short_blade"
+      ],
+      "unique": true
+    },
+    "magic_wand": {
+      "name": "Жезл искр",
+      "cost": 700,
+      "desc": "+3 атрибута, +80 маны",
+      "icon": "assets/items/staff.png",
+      "bonus": {
+        "str": 3,
+        "agi": 3,
+        "int": 3,
+        "mana": 80
+      },
+      "tier": "mid",
+      "recipe": [
+        "twig",
+        "charm",
+        "mote"
+      ],
+      "unique": true,
+      "active": {
+        "name": "Вспышка",
+        "key": 1,
+        "cooldown": 15,
+        "mana": 0,
+        "effect": "restore",
+        "hp": 80,
+        "mana_restore": 80
+      }
+    },
+    "phase_boots": {
+      "name": "Фазовые шаги",
+      "cost": 900,
+      "desc": "+0.5 скорости, +8 брони",
+      "icon": "assets/items/boots.png",
+      "bonus": {
+        "speed": 0.5,
+        "armor": 8
+      },
+      "tier": "mid",
+      "recipe": [
+        "boots",
+        "feather"
+      ],
+      "unique": true
+    },
+    "bracer": {
+      "name": "Наруч",
+      "cost": 700,
+      "desc": "+5 силы, +100 HP",
+      "icon": "assets/items/ring.png",
+      "bonus": {
+        "str": 5,
+        "hp": 100
+      },
+      "tier": "mid",
+      "recipe": [
+        "twig",
+        "buckler"
+      ]
+    },
+    "null_talisman": {
+      "name": "Пустой талисман",
+      "cost": 700,
+      "desc": "+5 интеллекта, +100 маны",
+      "icon": "assets/items/mana_crystal.png",
+      "bonus": {
+        "int": 5,
+        "mana": 100
+      },
+      "tier": "mid",
+      "recipe": [
+        "robe",
+        "mote"
+      ]
+    },
+    "wraith_band": {
+      "name": "Призрачный браслет",
+      "cost": 700,
+      "desc": "+5 ловкости, +8 урона",
+      "icon": "assets/items/ring.png",
+      "bonus": {
+        "agi": 5,
+        "damage": 8
+      },
+      "tier": "mid",
+      "recipe": [
+        "leather",
+        "short_blade"
+      ]
+    },
+    "soul_ring": {
+      "name": "Кольцо душ",
+      "cost": 800,
+      "desc": "+4 брони, +120 маны",
+      "icon": "assets/items/ring.png",
+      "bonus": {
+        "armor": 4,
+        "mana": 120
+      },
+      "tier": "mid",
+      "recipe": [
+        "ring",
+        "mote"
+      ],
+      "unique": true,
+      "active": {
+        "name": "Обмен",
+        "key": 2,
+        "cooldown": 25,
+        "mana": 0,
+        "effect": "blood_mana",
+        "hp_cost": 100,
+        "mana_restore": 150
+      }
+    },
+    "iron_helm": {
+      "name": "Железный шлем",
+      "cost": 850,
+      "desc": "+9 брони, +100 HP",
+      "icon": "assets/items/armor.png",
+      "bonus": {
+        "armor": 9,
+        "hp": 100
+      },
+      "tier": "mid",
+      "recipe": [
+        "armor",
+        "buckler"
+      ]
+    },
+    "void_stone": {
+      "name": "Камень пустоты",
+      "cost": 800,
+      "desc": "+180 маны, +10 урона",
+      "icon": "assets/items/mana_crystal.png",
+      "bonus": {
+        "mana": 180,
+        "damage": 10
+      },
+      "tier": "mid",
+      "recipe": [
+        "mana_crystal",
+        "mote"
+      ]
+    },
+    "echo_blade": {
+      "name": "Клинок эха",
+      "cost": 950,
+      "desc": "+25 урона, +10% скорости атаки",
+      "icon": "assets/items/blade.png",
+      "bonus": {
+        "damage": 25,
+        "attack_speed": 0.1
+      },
+      "tier": "mid",
+      "recipe": [
+        "blade",
+        "short_blade"
+      ],
+      "unique": true,
+      "orb": {
+        "type": "chain",
+        "chance": 0.25,
+        "damage": 50,
+        "jumps": 3
+      }
+    },
+    "adamant_core": {
+      "name": "Адамантовое ядро",
+      "cost": 3600,
+      "desc": "+220 HP, +12 брони, актив: иммунитет к магии",
+      "icon": "assets/items/armor.png",
+      "bonus": {
+        "hp": 220,
+        "armor": 12
+      },
+      "tier": "top",
+      "recipe": [
+        "iron_helm",
+        "robe",
+        "scroll"
+      ],
+      "unique": true,
+      "active": {
+        "name": "Адамант",
+        "key": 3,
+        "cooldown": 70,
+        "mana": 0,
+        "effect": "magic_immune",
+        "duration": 5
+      }
+    },
+    "phase_dagger": {
+      "name": "Фазовый кинжал",
+      "cost": 2250,
+      "desc": "+15 урона, актив: рывок",
+      "icon": "assets/items/blade.png",
+      "bonus": {
+        "damage": 15
+      },
+      "tier": "top",
+      "recipe": [
+        "short_blade",
+        "staff"
+      ],
+      "unique": true,
+      "active": {
+        "name": "Рывок",
+        "key": 4,
+        "cooldown": 18,
+        "mana": 0,
+        "effect": "blink",
+        "range": 6
+      }
+    },
+    "sunder_blade": {
+      "name": "Клинок разлома",
+      "cost": 4100,
+      "desc": "+55 урона, орб: снижение брони",
+      "icon": "assets/items/blade.png",
+      "bonus": {
+        "damage": 55
+      },
+      "tier": "top",
+      "recipe": [
+        "orb",
+        "blade",
+        "short_blade"
+      ],
+      "unique": true,
+      "orb": {
+        "type": "armor_break",
+        "value": 5,
+        "duration": 4
+      }
+    },
+    "bloodheart": {
+      "name": "Кровавое сердце",
+      "cost": 4300,
+      "desc": "+600 HP, +35 урона, вампиризм 20%",
+      "icon": "assets/items/heart.png",
+      "bonus": {
+        "hp": 600,
+        "damage": 35,
+        "lifesteal": 0.2
+      },
+      "tier": "top",
+      "recipe": [
+        "heart",
+        "orb"
+      ],
+      "unique": true
+    },
+    "evasion_fan": {
+      "name": "Веер уклонения",
+      "cost": 3800,
+      "desc": "+30% уклонения, +25 скорости атаки",
+      "icon": "assets/items/cloak.png",
+      "bonus": {
+        "evasion": 0.3,
+        "attack_speed": 0.25
+      },
+      "tier": "top",
+      "recipe": [
+        "feather",
+        "cloak",
+        "feather"
+      ],
+      "unique": true
+    },
+    "sunfire_relic": {
+      "name": "Реликвия солнца",
+      "cost": 4000,
+      "desc": "+50 урона, аура: 40 маг. урона/сек",
+      "icon": "assets/items/orb.png",
+      "bonus": {
+        "damage": 50,
+        "burn_aura": 40
+      },
+      "tier": "top",
+      "recipe": [
+        "staff",
+        "orb",
+        "scroll"
+      ],
+      "unique": true
+    },
+    "hex_rod": {
+      "name": "Жезл превращения",
+      "cost": 4200,
+      "desc": "+25 инт, актив: сайленс и рут",
+      "icon": "assets/items/staff.png",
+      "bonus": {
+        "int": 25
+      },
+      "tier": "top",
+      "recipe": [
+        "staff",
+        "charm",
+        "scroll"
+      ],
+      "unique": true,
+      "active": {
+        "name": "Превращение",
+        "key": 5,
+        "cooldown": 30,
+        "mana": 100,
+        "effect": "hex",
+        "duration": 3.0,
+        "range": 5
+      }
+    },
+    "frost_guard": {
+      "name": "Морозный страж",
+      "cost": 4000,
+      "desc": "+15 брони, актив: замедление по области",
+      "icon": "assets/items/armor.png",
+      "bonus": {
+        "armor": 15,
+        "mana": 100
+      },
+      "tier": "top",
+      "recipe": [
+        "armor",
+        "mana_crystal",
+        "cloak"
+      ],
+      "unique": true,
+      "active": {
+        "name": "Мороз",
+        "key": 6,
+        "cooldown": 35,
+        "mana": 80,
+        "effect": "frost_nova",
+        "radius": 4,
+        "slow": 0.45,
+        "duration": 3
+      }
+    },
+    "agha_core": {
+      "name": "Ядро Аганима",
+      "cost": 4200,
+      "desc": "Усиливает ультимейт; максимум 2 на команду",
+      "icon": "assets/items/staff.png",
+      "bonus": {},
+      "tier": "top",
+      "unique": true,
+      "team_limit": 2,
+      "agha": true
+    },
+    "shard": {
+      "name": "Осколок",
+      "cost": 1400,
+      "desc": "Усиливает базовую способность; максимум 2 на команду",
+      "icon": "assets/items/mana_crystal.png",
+      "bonus": {},
+      "tier": "top",
+      "unique": true,
+      "team_limit": 2,
+      "shard": true
+    }
+  },
+  "neutral_items": {
+    "moss_charm": {
+      "name": "Мшистый оберег",
+      "cost": 0,
+      "desc": "Нейтральный тир 1: +40 HP, +1 броня",
+      "icon": "assets/items/ring.png",
+      "bonus": {
+        "hp": 40,
+        "armor": 1
+      },
+      "tier": "neutral",
+      "neutral_tier": 1
+    },
+    "spark_orb": {
+      "name": "Искровая сфера",
+      "cost": 0,
+      "desc": "Нейтральный тир 1: +6 урона",
+      "icon": "assets/items/orb.png",
+      "bonus": {
+        "damage": 6
+      },
+      "tier": "neutral",
+      "neutral_tier": 1
+    },
+    "dusk_veil": {
+      "name": "Покров сумерек",
+      "cost": 0,
+      "desc": "Нейтральный тир 2: +10% уклонения",
+      "icon": "assets/items/cloak.png",
+      "bonus": {
+        "evasion": 0.1
+      },
+      "tier": "neutral",
+      "neutral_tier": 2
+    },
+    "ember_heart": {
+      "name": "Угольное сердце",
+      "cost": 0,
+      "desc": "Нейтральный тир 2: +120 HP",
+      "icon": "assets/items/heart.png",
+      "bonus": {
+        "hp": 120
+      },
+      "tier": "neutral",
+      "neutral_tier": 2
+    },
+    "river_eye": {
+      "name": "Око омута",
+      "cost": 0,
+      "desc": "Нейтральный тир 3: +15% маг. резиста",
+      "icon": "assets/items/mana_crystal.png",
+      "bonus": {
+        "magic_resist": 0.15
+      },
+      "tier": "neutral",
+      "neutral_tier": 3
+    },
+    "titan_seal": {
+      "name": "Печать титана",
+      "cost": 0,
+      "desc": "Нейтральный тир 3: +20 урона, +6 брони",
+      "icon": "assets/items/armor.png",
+      "bonus": {
+        "damage": 20,
+        "armor": 6
+      },
+      "tier": "neutral",
+      "neutral_tier": 3
     }
   }
 }
